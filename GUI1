@@ -1,4 +1,4 @@
--- ===== AUTOFARM COSTAS FIXO (COMPASSO) COM ANTI-KNOCKBACK =====
+-- ===== AUTOFARM COSTAS FIXO (COMPASSO) COM ANTI-KNOCKBACK E INFINITE JUMP =====
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 local CoreGui = game:GetService("CoreGui")
@@ -53,8 +53,7 @@ task.spawn(function()
 		textLabel.Text =
 			"Experiência em Teste:\n" ..
 			nomeExperiencia ..
-			"\n\nData e Hora:\n" ..
-			dataHora
+			"\n\nData e Hora:\n" .. dataHora
 		task.wait(1)
 	end
 end)
@@ -70,96 +69,6 @@ statusLabel.Font = Enum.Font.SourceSans
 statusLabel.TextSize = 14
 statusLabel.TextXAlignment = Enum.TextXAlignment.Left
 statusLabel.Text = "NPC: Nenhum"
-
--- ===== MOVEMENT SPEED SLIDER FUNCIONAL =====
-local sliderLabel = Instance.new("TextLabel")
-sliderLabel.Parent = frame
-sliderLabel.Size = UDim2.new(1, -20, 0, 20)
-sliderLabel.Position = UDim2.new(0, 10, 1, -55)
-sliderLabel.BackgroundTransparency = 1
-sliderLabel.TextColor3 = Color3.fromRGB(200, 200, 255)
-sliderLabel.Font = Enum.Font.SourceSans
-sliderLabel.TextSize = 14
-sliderLabel.TextXAlignment = Enum.TextXAlignment.Left
-sliderLabel.Text = "Speed: 16"
-
-local sliderFrame = Instance.new("Frame")
-sliderFrame.Parent = frame
-sliderFrame.Size = UDim2.new(0, 200, 0, 20)
-sliderFrame.Position = UDim2.new(0, 10, 1, -30)
-sliderFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-local sliderCorner = Instance.new("UICorner")
-sliderCorner.CornerRadius = UDim.new(0, 5)
-sliderCorner.Parent = sliderFrame
-
-local sliderBar = Instance.new("Frame")
-sliderBar.Parent = sliderFrame
-sliderBar.Size = UDim2.new(0, 0, 1, 0)
-sliderBar.BackgroundColor3 = Color3.fromRGB(0, 140, 0)
-local barCorner = Instance.new("UICorner")
-barCorner.CornerRadius = UDim.new(0, 5)
-barCorner.Parent = sliderBar
-
-local sliderButton = Instance.new("TextButton")
-sliderButton.Parent = sliderFrame
-sliderButton.Size = UDim2.new(0, 20, 1, 0)
-sliderButton.Position = UDim2.new(0, 0, 0, 0)
-sliderButton.BackgroundColor3 = Color3.fromRGB(200, 200, 255)
-sliderButton.Text = ""
-local buttonCorner = Instance.new("UICorner")
-buttonCorner.CornerRadius = UDim.new(0, 10)
-buttonCorner.Parent = sliderButton
-
-local MIN_SPEED = 14
-local MAX_SPEED = 30
-local movementSpeed = 16
-
-local function applySpeed(speed)
-	local character = player.Character
-	if character and character:FindFirstChild("Humanoid") then
-		character.Humanoid.WalkSpeed = speed
-	end
-end
-
-local function updateSpeed(newValue)
-	movementSpeed = MIN_SPEED + (MAX_SPEED - MIN_SPEED) * newValue
-	applySpeed(movementSpeed)
-	sliderLabel.Text = "Speed: " .. math.floor(movementSpeed)
-	sliderBar.Size = UDim2.new(newValue, 0, 1, 0)
-	sliderButton.Position = UDim2.new(newValue, -10, 0, 0)
-end
-
-local draggingSlider = false
-sliderButton.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		draggingSlider = true
-	end
-end)
-sliderButton.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		draggingSlider = false
-	end
-end)
-UserInputService.InputChanged:Connect(function(input)
-	if draggingSlider and input.UserInputType == Enum.UserInputType.MouseMovement then
-		local pos = math.clamp((input.Position.X - sliderFrame.AbsolutePosition.X) / sliderFrame.AbsoluteSize.X, 0, 1)
-		updateSpeed(pos)
-	end
-end)
-
-sliderFrame.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		local pos = math.clamp((input.Position.X - sliderFrame.AbsolutePosition.X) / sliderFrame.AbsoluteSize.X, 0, 1)
-		updateSpeed(pos)
-	end
-end)
-
-updateSpeed((movementSpeed - MIN_SPEED) / (MAX_SPEED - MIN_SPEED))
-
-player.CharacterAdded:Connect(function(char)
-	task.wait(0.5)
-	applySpeed(movementSpeed)
-end)
 
 -- Botão de fechar
 local closeButton = Instance.new("TextButton")
@@ -181,7 +90,7 @@ closeButton.MouseButton1Click:Connect(function()
 end)
 
 -- DRAG
-local draggingFrame = false
+local dragging = false
 local dragStart
 local startPos
 
@@ -198,20 +107,20 @@ end
 frame.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1
 	or input.UserInputType == Enum.UserInputType.Touch then
-		draggingFrame = true
+		dragging = true
 		dragStart = input.Position
 		startPos = frame.Position
 
 		input.Changed:Connect(function()
 			if input.UserInputState == Enum.UserInputState.End then
-				draggingFrame = false
+				dragging = false
 			end
 		end)
 	end
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-	if draggingFrame and (input.UserInputType == Enum.UserInputType.MouseMovement
+	if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
 	or input.UserInputType == Enum.UserInputType.Touch) then
 		update(input)
 	end
@@ -222,10 +131,12 @@ local autofarmEnabled = false
 local lockedNPC = nil
 local connection = nil
 
+-- CONFIGURAÇÕES
 local BACK_DISTANCE = 3.5
 local HEIGHT_OFFSET = 2.5
 local MAX_DISTANCE = 60
 
+-- Botão toggle autofarm
 local toggleButton = Instance.new("TextButton")
 toggleButton.Parent = frame
 toggleButton.Size = UDim2.new(0, 160, 0, 40)
@@ -240,6 +151,7 @@ local btnCorner = Instance.new("UICorner")
 btnCorner.CornerRadius = UDim.new(0, 8)
 btnCorner.Parent = toggleButton
 
+-- Função para encontrar NPC mais próximo
 local function findClosestNPC()
 	local character = player.Character
 	if not character or not character:FindFirstChild("HumanoidRootPart") then
@@ -252,7 +164,7 @@ local function findClosestNPC()
 	for _, model in ipairs(workspace:GetDescendants()) do
 		if model:IsA("Model")
 			and model ~= character
-			and not Players:GetPlayerFromCharacter(model)
+			and not Players:GetPlayerFromCharacter(model) -- Ignora jogadores
 			and model:FindFirstChild("Humanoid")
 			and model:FindFirstChild("HumanoidRootPart")
 			and model.Humanoid.Health > 0 then
@@ -268,6 +180,7 @@ local function findClosestNPC()
 	return closest
 end
 
+-- Função de autofarm
 local function autofarmLoop()
 	if not autofarmEnabled then return end
 	
@@ -276,6 +189,7 @@ local function autofarmLoop()
 		local root = character and character:FindFirstChild("HumanoidRootPart")
 
 		if root then
+			-- valida NPC travado
 			if not lockedNPC
 				or not lockedNPC.Parent
 				or not lockedNPC:FindFirstChild("Humanoid")
@@ -287,16 +201,20 @@ local function autofarmLoop()
 			if lockedNPC and lockedNPC:FindFirstChild("HumanoidRootPart") then
 				local npcRoot = lockedNPC.HumanoidRootPart
 
+				-- === POSIÇÃO ESTÁTICA ATRÁS DO NPC ===
 				local npcLook = npcRoot.CFrame.LookVector
 				local targetPos = npcRoot.Position
 					+ (-npcLook * BACK_DISTANCE)
 					+ Vector3.new(0, HEIGHT_OFFSET, 0)
 
+				-- ANTI KNOCKBACK
 				root.AssemblyLinearVelocity = Vector3.zero
 				root.AssemblyAngularVelocity = Vector3.zero
 
+				-- POSICIONA ESTÁTICO
 				root.CFrame = CFrame.new(targetPos)
 				
+				-- Atualiza status
 				statusLabel.Text = "NPC: " .. lockedNPC.Name
 			else
 				statusLabel.Text = "NPC: Nenhum"
@@ -305,6 +223,7 @@ local function autofarmLoop()
 	end)
 end
 
+-- Toggle autofarm
 toggleButton.MouseButton1Click:Connect(function()
 	autofarmEnabled = not autofarmEnabled
 	
@@ -325,8 +244,49 @@ toggleButton.MouseButton1Click:Connect(function()
 	end
 end)
 
+-- ===== INFINITE JUMP CONFIG =====
+local infiniteJumpEnabled = false
+
+-- Botão toggle infinite jump
+local infiniteJumpButton = Instance.new("TextButton")
+infiniteJumpButton.Parent = frame
+infiniteJumpButton.Size = UDim2.new(0, 160, 0, 40)
+infiniteJumpButton.Position = UDim2.new(0, 10, 1, -50)
+infiniteJumpButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+infiniteJumpButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+infiniteJumpButton.Font = Enum.Font.SourceSansBold
+infiniteJumpButton.TextSize = 18
+infiniteJumpButton.Text = "Infinite Jump: OFF"
+
+local jumpBtnCorner = Instance.new("UICorner")
+jumpBtnCorner.CornerRadius = UDim.new(0, 8)
+jumpBtnCorner.Parent = infiniteJumpButton
+
+infiniteJumpButton.MouseButton1Click:Connect(function()
+	infiniteJumpEnabled = not infiniteJumpEnabled
+	if infiniteJumpEnabled then
+		infiniteJumpButton.Text = "Infinite Jump: ON"
+		infiniteJumpButton.BackgroundColor3 = Color3.fromRGB(0, 140, 0)
+	else
+		infiniteJumpButton.Text = "Infinite Jump: OFF"
+		infiniteJumpButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+	end
+end)
+
+-- Listener do salto
+UserInputService.JumpRequest:Connect(function()
+	if infiniteJumpEnabled then
+		local character = player.Character
+		if character and character:FindFirstChild("Humanoid") then
+			character.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+		end
+	end
+end)
+
+-- Limpeza quando a GUI for fechada
 screenGui.Destroying:Connect(function()
 	if connection then
 		connection:Disconnect()
 	end
 end)
+
