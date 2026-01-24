@@ -1,12 +1,11 @@
--- ===== AUTOFARM COSTAS COM AUTO-ADJUST E ANTI-KNOCKBACK =====
+-- ===== AUTOFARM COSTAS FIXO (COMPASSO) COM ANTI-KNOCKBACK =====
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 local CoreGui = game:GetService("CoreGui")
 
 if not player then return end
 
--- Remove GUI antiga se existir
+-- Remove GUI antiga
 pcall(function()
 	CoreGui:FindFirstChild("InfoExperienciaGui"):Destroy()
 end)
@@ -17,7 +16,7 @@ screenGui.Name = "InfoExperienciaGui"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = CoreGui
 
--- Frame principal
+-- Frame
 local frame = Instance.new("Frame")
 frame.Parent = screenGui
 frame.Size = UDim2.new(0, 520, 0, 150)
@@ -45,7 +44,7 @@ textLabel.TextYAlignment = Enum.TextYAlignment.Top
 
 local nomeExperiencia = game.Name
 
--- Atualização data/hora
+-- Atualização de data/hora
 task.spawn(function()
 	while frame.Parent do
 		local dataHora = os.date("%d/%m/%Y - %H:%M:%S")
@@ -58,7 +57,7 @@ task.spawn(function()
 	end
 end)
 
--- ===== DRAG =====
+-- DRAG
 local dragging = false
 local dragStart
 local startPos
@@ -98,13 +97,10 @@ end)
 -- ===== AUTOFARM CONFIG =====
 local autofarmEnabled = false
 local lockedNPC = nil
-local orbitAngle = 0
 
--- Ajustes do modo costas
+-- CONFIGURAÇÕES
 local BACK_DISTANCE = 3.5
 local HEIGHT_OFFSET = 2.5
-local SMOOTHNESS = 0.25
-local ROTATION_SMOOTH = 0.2
 local UPDATE_DELAY = 0.15
 local MAX_DISTANCE = 60
 
@@ -123,7 +119,7 @@ local btnCorner = Instance.new("UICorner")
 btnCorner.CornerRadius = UDim.new(0, 8)
 btnCorner.Parent = toggleButton
 
--- Função para encontrar o NPC mais próximo
+-- Função para encontrar NPC mais próximo
 local function findClosestNPC()
 	local character = player.Character
 	if not character or not character:FindFirstChild("HumanoidRootPart") then
@@ -151,7 +147,7 @@ local function findClosestNPC()
 	return closest
 end
 
--- Loop principal do autofarm
+-- Loop autofarm
 task.spawn(function()
 	while true do
 		if autofarmEnabled then
@@ -166,29 +162,23 @@ task.spawn(function()
 					or lockedNPC.Humanoid.Health <= 0 then
 
 					lockedNPC = findClosestNPC()
-					orbitAngle = 0
 				end
 
 				if lockedNPC and lockedNPC:FindFirstChild("HumanoidRootPart") then
 					local npcRoot = lockedNPC.HumanoidRootPart
 
-					-- === MOVIMENTO COSTAS AUTO-ADJUST ===
+					-- === POSIÇÃO ESTÁTICA ATRÁS DO NPC ===
 					local npcLook = npcRoot.CFrame.LookVector
 					local targetPos = npcRoot.Position
 						+ (-npcLook * BACK_DISTANCE)
 						+ Vector3.new(0, HEIGHT_OFFSET, 0)
-					local targetCFrame = CFrame.new(targetPos)
 
 					-- ANTI KNOCKBACK
 					root.AssemblyLinearVelocity = Vector3.zero
 					root.AssemblyAngularVelocity = Vector3.zero
 
-					-- MOVIMENTO SUAVE
-					root.CFrame = root.CFrame:Lerp(targetCFrame, SMOOTHNESS)
-
-					-- AUTO-ADJUST ROTATION (olhando para frente do NPC)
-					local lookAtCFrame = CFrame.new(root.Position, npcRoot.Position + Vector3.new(0, HEIGHT_OFFSET, 0))
-					root.CFrame = root.CFrame:Lerp(lookAtCFrame, ROTATION_SMOOTH)
+					-- POSICIONA ESTÁTICO
+					root.CFrame = CFrame.new(targetPos)
 				end
 			end
 		end
@@ -197,15 +187,12 @@ task.spawn(function()
 	end
 end)
 
--- Toggle do botão
+-- Toggle
 toggleButton.MouseButton1Click:Connect(function()
 	autofarmEnabled = not autofarmEnabled
 	lockedNPC = nil
-	orbitAngle = 0
-
 	toggleButton.Text = autofarmEnabled and "Autofarm: ON" or "Autofarm: OFF"
 	toggleButton.BackgroundColor3 = autofarmEnabled
 		and Color3.fromRGB(0, 140, 0)
 		or Color3.fromRGB(40, 40, 40)
 end)
-
