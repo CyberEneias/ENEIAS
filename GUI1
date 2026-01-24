@@ -98,21 +98,21 @@ UserInputService.InputChanged:Connect(function(input)
 	end
 end)
 
--- ===== AUTOFARM ORBITAL =====
-local RunService = game:GetService("RunService")
-
+-- ===== AUTOFARM ORBITAL CORRIGIDO E ESTÁVEL =====
 local autofarmEnabled = false
 
--- CONFIGURAÇÕES
-local HEIGHT_OFFSET = 6          -- altura acima do NPC
-local ORBIT_RADIUS = 3.5         -- raio da órbita
-local ORBIT_SPEED = 1.5          -- velocidade da órbita (menor = mais lento)
-local UPDATE_DELAY = 0.15        -- delay do loop
-local SMOOTHNESS = 0.25          -- suavização do movimento
+-- CONFIG
+local HEIGHT_OFFSET = 6
+local ORBIT_RADIUS = 3.5
+local ORBIT_SPEED = 1.2
+local UPDATE_DELAY = 0.15
+local SMOOTHNESS = 0.25
+local MAX_DISTANCE = 60 -- evita saltos absurdos
 
 local orbitAngle = 0
+local lockedNPC = nil
 
--- Botão
+-- BOTÃO
 local toggleButton = Instance.new("TextButton")
 toggleButton.Parent = frame
 toggleButton.Size = UDim2.new(0, 160, 0, 40)
@@ -127,17 +127,17 @@ local btnCorner = Instance.new("UICorner")
 btnCorner.CornerRadius = UDim.new(0, 8)
 btnCorner.Parent = toggleButton
 
--- NPC mais próximo
-local function getClosestNPC()
+-- ENCONTRA NPC MAIS PRÓXIMO (APENAS QUANDO NECESSÁRIO)
+local function findClosestNPC()
 	local character = player.Character
 	if not character or not character:FindFirstChild("HumanoidRootPart") then
 		return nil
 	end
 
 	local root = character.HumanoidRootPart
-	local closest, minDist = nil, math.huge
+	local closest, minDist = nil, MAX_DISTANCE
 
-	for _, model in ipairs(workspace:GetChildren()) do
+	for _, model in ipairs(workspace:GetDescendants()) do
 		if model:IsA("Model")
 			and model ~= character
 			and model:FindFirstChild("Humanoid")
@@ -155,7 +155,7 @@ local function getClosestNPC()
 	return closest
 end
 
--- Loop orbital
+-- LOOP PRINCIPAL
 task.spawn(function()
 	while true do
 		if autofarmEnabled then
@@ -163,23 +163,32 @@ task.spawn(function()
 			local root = character and character:FindFirstChild("HumanoidRootPart")
 
 			if root then
-				local npc = getClosestNPC()
-				if npc and npc:FindFirstChild("HumanoidRootPart") then
-					local npcRoot = npc.HumanoidRootPart
+				-- valida NPC travado
+				if not lockedNPC
+					or not lockedNPC.Parent
+					or not lockedNPC:FindFirstChild("Humanoid")
+					or lockedNPC.Humanoid.Health <= 0 then
 
-					-- avança o ângulo da órbita
+					lockedNPC = findClosestNPC()
+					orbitAngle = 0 -- reset seguro
+				end
+
+				if lockedNPC and lockedNPC:FindFirstChild("HumanoidRootPart") then
+					local npcRoot = lockedNPC.HumanoidRootPart
+
+					-- órbita progressiva
 					orbitAngle += ORBIT_SPEED * UPDATE_DELAY
 
-					-- calcula posição orbital
-					local offsetX = math.cos(orbitAngle) * ORBIT_RADIUS
-					local offsetZ = math.sin(orbitAngle) * ORBIT_RADIUS
+					local offset = Vector3.new(
+						math.cos(orbitAngle) * ORBIT_RADIUS,
+						HEIGHT_OFFSET,
+						math.sin(orbitAngle) * ORBIT_RADIUS
+					)
 
-					local targetPos = npcRoot.Position
-						+ Vector3.new(offsetX, HEIGHT_OFFSET, offsetZ)
-
+					local targetPos = npcRoot.Position + offset
 					local targetCFrame = CFrame.new(targetPos)
 
-					-- movimento suave
+					-- suavização segura
 					root.CFrame = root.CFrame:Lerp(targetCFrame, SMOOTHNESS)
 				end
 			end
@@ -189,9 +198,12 @@ task.spawn(function()
 	end
 end)
 
--- Toggle
+-- TOGGLE
 toggleButton.MouseButton1Click:Connect(function()
 	autofarmEnabled = not autofarmEnabled
+	lockedNPC = nil
+	orbitAngle = 0
+
 	toggleButton.Text = autofarmEnabled and "Autofarm: ON" or "Autofarm: OFF"
 	toggleButton.BackgroundColor3 = autofarmEnabled
 		and Color3.fromRGB(0, 140, 0)
