@@ -97,3 +97,76 @@ UserInputService.InputChanged:Connect(function(input)
 		update(input)
 	end
 end)
+
+-- ===== AUTOFARM =====
+local RunService = game:GetService("RunService")
+local autofarmEnabled = false
+local HEIGHT_OFFSET = 6 -- altura acima do NPC
+
+-- Botão
+local toggleButton = Instance.new("TextButton")
+toggleButton.Parent = frame
+toggleButton.Size = UDim2.new(0, 160, 0, 40)
+toggleButton.Position = UDim2.new(1, -170, 1, -50)
+toggleButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleButton.Font = Enum.Font.SourceSansBold
+toggleButton.TextSize = 18
+toggleButton.Text = "Autofarm: OFF"
+
+local btnCorner = Instance.new("UICorner")
+btnCorner.CornerRadius = UDim.new(0, 8)
+btnCorner.Parent = toggleButton
+
+-- Função para achar NPC mais próximo
+local function getClosestNPC()
+	local character = player.Character
+	if not character or not character:FindFirstChild("HumanoidRootPart") then
+		return nil
+	end
+
+	local root = character.HumanoidRootPart
+	local closestNPC = nil
+	local shortestDistance = math.huge
+
+	for _, model in pairs(workspace:GetChildren()) do
+		if model:IsA("Model")
+			and model ~= character
+			and model:FindFirstChild("Humanoid")
+			and model:FindFirstChild("HumanoidRootPart")
+			and model.Humanoid.Health > 0 then
+
+			local distance = (root.Position - model.HumanoidRootPart.Position).Magnitude
+			if distance < shortestDistance then
+				shortestDistance = distance
+				closestNPC = model
+			end
+		end
+	end
+
+	return closestNPC
+end
+
+-- Loop do autofarm
+RunService.Heartbeat:Connect(function()
+	if not autofarmEnabled then return end
+
+	local character = player.Character
+	if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+
+	local npc = getClosestNPC()
+	if npc and npc:FindFirstChild("HumanoidRootPart") then
+		local npcRoot = npc.HumanoidRootPart
+		character.HumanoidRootPart.CFrame =
+			npcRoot.CFrame * CFrame.new(0, HEIGHT_OFFSET, 0)
+	end
+end)
+
+-- Toggle
+toggleButton.MouseButton1Click:Connect(function()
+	autofarmEnabled = not autofarmEnabled
+	toggleButton.Text = autofarmEnabled and "Autofarm: ON" or "Autofarm: OFF"
+	toggleButton.BackgroundColor3 = autofarmEnabled
+		and Color3.fromRGB(0, 120, 0)
+		or Color3.fromRGB(40, 40, 40)
+end)
