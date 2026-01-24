@@ -1,12 +1,15 @@
--- LocalScript
+-- Execução momentânea (colar e rodar no console)
+
+if game.CoreGui:FindFirstChild("TempTestGUI") then
+	game.CoreGui.TempTestGUI:Destroy()
+end
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
 
--- Informações da experiência
+-- Infos da experiência
 local experienceName = game.Name
 local executionDate = os.date("%d/%m/%Y - %H:%M:%S")
 
@@ -14,102 +17,102 @@ local executionDate = os.date("%d/%m/%Y - %H:%M:%S")
 local autofarmEnabled = false
 local killAuraEnabled = false
 
--- Criando GUI
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "TestGUI"
-screenGui.ResetOnSpawn = false
-screenGui.Parent = playerGui
+-- GUI
+local gui = Instance.new("ScreenGui")
+gui.Name = "TempTestGUI"
+gui.ResetOnSpawn = false
+gui.Parent = game.CoreGui
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 300, 0, 200)
+frame.Size = UDim2.new(0, 320, 0, 210)
 frame.Position = UDim2.new(0, 20, 0, 20)
-frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-frame.Parent = screenGui
+frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+frame.BorderSizePixel = 0
+frame.Parent = gui
 
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 10)
-corner.Parent = frame
+local corner = Instance.new("UICorner", frame)
+corner.CornerRadius = UDim.new(0, 12)
 
--- Título (nome da experiência)
+-- Título
 local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, -10, 0, 30)
+title.Size = UDim2.new(1, -10, 0, 32)
 title.Position = UDim2.new(0, 5, 0, 5)
 title.BackgroundTransparency = 1
 title.Text = experienceName
-title.TextColor3 = Color3.fromRGB(255, 255, 255)
-title.TextScaled = true
 title.Font = Enum.Font.GothamBold
+title.TextScaled = true
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
 title.Parent = frame
 
 -- Data
 local dateLabel = Instance.new("TextLabel")
-dateLabel.Size = UDim2.new(1, -10, 0, 20)
+dateLabel.Size = UDim2.new(1, -10, 0, 22)
 dateLabel.Position = UDim2.new(0, 5, 0, 40)
 dateLabel.BackgroundTransparency = 1
 dateLabel.Text = executionDate
-dateLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-dateLabel.TextScaled = true
 dateLabel.Font = Enum.Font.Gotham
+dateLabel.TextScaled = true
+dateLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
 dateLabel.Parent = frame
 
--- Função para criar botões toggle
-local function createToggle(text, positionY, callback)
-	local button = Instance.new("TextButton")
-	button.Size = UDim2.new(1, -20, 0, 35)
-	button.Position = UDim2.new(0, 10, 0, positionY)
-	button.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-	button.Text = text .. ": OFF"
-	button.TextColor3 = Color3.fromRGB(255, 255, 255)
-	button.Font = Enum.Font.Gotham
-	button.TextScaled = true
-	button.Parent = frame
+-- Função Toggle
+local function createToggle(name, yPos, callback)
+	local btn = Instance.new("TextButton")
+	btn.Size = UDim2.new(1, -20, 0, 38)
+	btn.Position = UDim2.new(0, 10, 0, yPos)
+	btn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+	btn.Text = name .. ": OFF"
+	btn.Font = Enum.Font.Gotham
+	btn.TextScaled = true
+	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	btn.Parent = frame
+
+	local c = Instance.new("UICorner", btn)
+	c.CornerRadius = UDim.new(0, 8)
 
 	local enabled = false
-
-	button.MouseButton1Click:Connect(function()
+	btn.MouseButton1Click:Connect(function()
 		enabled = not enabled
-		button.Text = text .. (enabled and ": ON" or ": OFF")
+		btn.Text = name .. (enabled and ": ON" or ": OFF")
+		btn.BackgroundColor3 = enabled and Color3.fromRGB(70, 120, 70) or Color3.fromRGB(45, 45, 45)
 		callback(enabled)
 	end)
 end
 
--- Toggle Autofarm
-createToggle("Autofarm", 70, function(state)
+-- Toggles
+createToggle("Autofarm", 75, function(state)
 	autofarmEnabled = state
 end)
 
--- Toggle Kill Aura
-createToggle("Kill Aura", 115, function(state)
+createToggle("Kill Aura", 125, function(state)
 	killAuraEnabled = state
 end)
 
--- Loop do Autofarm (exemplo genérico)
+-- Autofarm loop (exemplo genérico)
 task.spawn(function()
-	while true do
+	while gui.Parent do
 		task.wait(1)
-
 		if autofarmEnabled then
-			-- EXEMPLO:
-			-- Mover o personagem
-			-- Coletar moedas
-			-- Disparar RemoteEvent
-
-			print("Autofarm ativo...")
+			-- Ajuste conforme o jogo:
+			-- mover personagem
+			-- coletar itens
+			-- disparar remotes
+			print("[Autofarm] ativo")
 		end
 	end
 end)
 
--- Loop do Kill Aura (exemplo genérico)
+-- Kill Aura loop (exemplo genérico)
 task.spawn(function()
-	while true do
-		task.wait(0.3)
-
+	while gui.Parent do
+		task.wait(0.25)
 		if killAuraEnabled then
-			-- EXEMPLO:
-			-- Detectar inimigos próximos
-			-- Reduzir vida / atacar via RemoteEvent
-
-			print("Kill Aura ativa...")
+			-- Ajuste conforme o jogo:
+			-- detectar NPCs próximos
+			-- atacar automaticamente
+			print("[Kill Aura] ativa")
 		end
 	end
 end)
+
+print("GUI temporário carregado com sucesso.")
