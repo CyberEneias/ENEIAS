@@ -1,4 +1,4 @@
--- ===== AUTOFARM COSTAS FIXO (COMPASSO) COM ANTI-KNOCKBACK =====
+-- ===== AUTOFARM COSTAS FIXO (COMPASSO) COM ANTI-KNOCKBACK E INFINITE JUMP =====
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 local CoreGui = game:GetService("CoreGui")
@@ -53,8 +53,7 @@ task.spawn(function()
 		textLabel.Text =
 			"Experiência em Teste:\n" ..
 			nomeExperiencia ..
-			"\n\nData e Hora:\n" ..
-			dataHora
+			"\n\nData e Hora:\n" .. dataHora
 		task.wait(1)
 	end
 end)
@@ -137,7 +136,7 @@ local BACK_DISTANCE = 3.5
 local HEIGHT_OFFSET = 2.5
 local MAX_DISTANCE = 60
 
--- Botão toggle
+-- Botão toggle autofarm
 local toggleButton = Instance.new("TextButton")
 toggleButton.Parent = frame
 toggleButton.Size = UDim2.new(0, 160, 0, 40)
@@ -224,18 +223,16 @@ local function autofarmLoop()
 	end)
 end
 
--- Toggle
+-- Toggle autofarm
 toggleButton.MouseButton1Click:Connect(function()
 	autofarmEnabled = not autofarmEnabled
 	
 	if autofarmEnabled then
-		-- Conecta ao Heartbeat para melhor performance
 		if connection then connection:Disconnect() end
 		connection = RunService.Heartbeat:Connect(autofarmLoop)
 		toggleButton.Text = "Autofarm: ON"
 		toggleButton.BackgroundColor3 = Color3.fromRGB(0, 140, 0)
 	else
-		-- Desconecta do Heartbeat
 		if connection then 
 			connection:Disconnect()
 			connection = nil
@@ -244,6 +241,45 @@ toggleButton.MouseButton1Click:Connect(function()
 		toggleButton.Text = "Autofarm: OFF"
 		toggleButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 		statusLabel.Text = "NPC: Nenhum"
+	end
+end)
+
+-- ===== INFINITE JUMP CONFIG =====
+local infiniteJumpEnabled = false
+
+-- Botão toggle infinite jump
+local infiniteJumpButton = Instance.new("TextButton")
+infiniteJumpButton.Parent = frame
+infiniteJumpButton.Size = UDim2.new(0, 160, 0, 40)
+infiniteJumpButton.Position = UDim2.new(0, 10, 1, -50)
+infiniteJumpButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+infiniteJumpButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+infiniteJumpButton.Font = Enum.Font.SourceSansBold
+infiniteJumpButton.TextSize = 18
+infiniteJumpButton.Text = "Infinite Jump: OFF"
+
+local jumpBtnCorner = Instance.new("UICorner")
+jumpBtnCorner.CornerRadius = UDim.new(0, 8)
+jumpBtnCorner.Parent = infiniteJumpButton
+
+infiniteJumpButton.MouseButton1Click:Connect(function()
+	infiniteJumpEnabled = not infiniteJumpEnabled
+	if infiniteJumpEnabled then
+		infiniteJumpButton.Text = "Infinite Jump: ON"
+		infiniteJumpButton.BackgroundColor3 = Color3.fromRGB(0, 140, 0)
+	else
+		infiniteJumpButton.Text = "Infinite Jump: OFF"
+		infiniteJumpButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+	end
+end)
+
+-- Listener do salto
+UserInputService.JumpRequest:Connect(function()
+	if infiniteJumpEnabled then
+		local character = player.Character
+		if character and character:FindFirstChild("Humanoid") then
+			character.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+		end
 	end
 end)
 
