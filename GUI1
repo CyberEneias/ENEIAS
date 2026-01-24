@@ -1,91 +1,49 @@
 -- Serviços
 local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
-local CoreGui = game:GetService("CoreGui")
 
-if not player then return end
+-- Proteção básica
+if not player then
+	warn("Jogador não encontrado.")
+	return
+end
 
--- Remove GUI antiga
+-- Remove GUI antiga se existir
 pcall(function()
-	CoreGui:FindFirstChild("InfoExperienciaGui"):Destroy()
+	player.PlayerGui:FindFirstChild("InfoExperienciaGui"):Destroy()
 end)
 
--- GUI
+-- Criando GUI
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "InfoExperienciaGui"
 screenGui.ResetOnSpawn = false
-screenGui.Parent = CoreGui
+screenGui.Parent = player:WaitForChild("PlayerGui")
 
-local frame = Instance.new("Frame")
-frame.Parent = screenGui
-frame.Size = UDim2.new(0, 520, 0, 200)
-frame.Position = UDim2.new(0, 40, 0, 40)
-frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-frame.BorderSizePixel = 0
-frame.Active = true
-
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 12)
-corner.Parent = frame
-
--- Texto info
 local textLabel = Instance.new("TextLabel")
-textLabel.Parent = frame
-textLabel.Size = UDim2.new(1, -20, 0, 120)
-textLabel.Position = UDim2.new(0, 10, 0, 10)
-textLabel.BackgroundTransparency = 1
+textLabel.Parent = screenGui
+textLabel.Size = UDim2.new(0, 520, 0, 130)
+textLabel.Position = UDim2.new(0, 20, 0, 20)
+textLabel.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+textLabel.BackgroundTransparency = 0.15
 textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 textLabel.Font = Enum.Font.SourceSansBold
 textLabel.TextWrapped = true
 textLabel.TextScaled = true
-textLabel.TextXAlignment = Enum.TextXAlignment.Left
-textLabel.TextYAlignment = Enum.TextYAlignment.Top
+textLabel.BorderSizePixel = 0
 
--- Botão Autofarm
-local toggleButton = Instance.new("TextButton")
-toggleButton.Parent = frame
-toggleButton.Size = UDim2.new(0, 200, 0, 40)
-toggleButton.Position = UDim2.new(0, 10, 1, -50)
-toggleButton.BackgroundColor3 = Color3.fromRGB(120, 0, 0)
-toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-toggleButton.Font = Enum.Font.SourceSansBold
-toggleButton.TextScaled = true
-toggleButton.Text = "AUTOFARM: OFF"
-toggleButton.BorderSizePixel = 0
-
-local btnCorner = Instance.new("UICorner")
-btnCorner.CornerRadius = UDim.new(0, 8)
-btnCorner.Parent = toggleButton
-
--- Info base
+-- Informações
 local nomeExperiencia = game.Name
-local autofarm = false
 
--- Atualiza texto
+-- Loop de atualização
 task.spawn(function()
-	while frame.Parent do
+	while screenGui.Parent do
 		local dataHora = os.date("%d/%m/%Y - %H:%M:%S")
 		textLabel.Text =
 			"Experiência em Teste:\n" ..
 			nomeExperiencia ..
 			"\n\nData e Hora:\n" ..
-			dataHora ..
-			"\n\nAutofarm: " .. (autofarm and "ATIVO" or "DESLIGADO")
+			dataHora
 
 		task.wait(1)
 	end
 end)
-
--- ===== DRAG =====
-local dragging = false
-local dragStart, startPos
-
-frame.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		dragging = true
-		dragStart = input.Position
-		startPos = frame.Position
-
-		input.Changed:
