@@ -1,40 +1,39 @@
 -- Serviços
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 local CoreGui = game:GetService("CoreGui")
 
 if not player then return end
 
--- Remove GUI antiga se existir
+-- Remove GUI antiga
 pcall(function()
 	CoreGui:FindFirstChild("InfoExperienciaGui"):Destroy()
 end)
 
--- GUI principal
+-- GUI
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "InfoExperienciaGui"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = CoreGui
 
--- Frame principal
 local frame = Instance.new("Frame")
 frame.Parent = screenGui
-frame.Size = UDim2.new(0, 520, 0, 150)
+frame.Size = UDim2.new(0, 520, 0, 200)
 frame.Position = UDim2.new(0, 40, 0, 40)
 frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 frame.BorderSizePixel = 0
 frame.Active = true
 
--- Cantos arredondados
 local corner = Instance.new("UICorner")
 corner.CornerRadius = UDim.new(0, 12)
 corner.Parent = frame
 
--- Texto
+-- Texto info
 local textLabel = Instance.new("TextLabel")
 textLabel.Parent = frame
-textLabel.Size = UDim2.new(1, -20, 1, -20)
+textLabel.Size = UDim2.new(1, -20, 0, 120)
 textLabel.Position = UDim2.new(0, 10, 0, 10)
 textLabel.BackgroundTransparency = 1
 textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -44,10 +43,27 @@ textLabel.TextScaled = true
 textLabel.TextXAlignment = Enum.TextXAlignment.Left
 textLabel.TextYAlignment = Enum.TextYAlignment.Top
 
--- Informações
-local nomeExperiencia = game.Name
+-- Botão Autofarm
+local toggleButton = Instance.new("TextButton")
+toggleButton.Parent = frame
+toggleButton.Size = UDim2.new(0, 200, 0, 40)
+toggleButton.Position = UDim2.new(0, 10, 1, -50)
+toggleButton.BackgroundColor3 = Color3.fromRGB(120, 0, 0)
+toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleButton.Font = Enum.Font.SourceSansBold
+toggleButton.TextScaled = true
+toggleButton.Text = "AUTOFARM: OFF"
+toggleButton.BorderSizePixel = 0
 
--- Atualização de data/hora
+local btnCorner = Instance.new("UICorner")
+btnCorner.CornerRadius = UDim.new(0, 8)
+btnCorner.Parent = toggleButton
+
+-- Info base
+local nomeExperiencia = game.Name
+local autofarm = false
+
+-- Atualiza texto
 task.spawn(function()
 	while frame.Parent do
 		local dataHora = os.date("%d/%m/%Y - %H:%M:%S")
@@ -55,7 +71,8 @@ task.spawn(function()
 			"Experiência em Teste:\n" ..
 			nomeExperiencia ..
 			"\n\nData e Hora:\n" ..
-			dataHora
+			dataHora ..
+			"\n\nAutofarm: " .. (autofarm and "ATIVO" or "DESLIGADO")
 
 		task.wait(1)
 	end
@@ -63,37 +80,12 @@ end)
 
 -- ===== DRAG =====
 local dragging = false
-local dragStart
-local startPos
-
-local function update(input)
-	local delta = input.Position - dragStart
-	frame.Position = UDim2.new(
-		startPos.X.Scale,
-		startPos.X.Offset + delta.X,
-		startPos.Y.Scale,
-		startPos.Y.Offset + delta.Y
-	)
-end
+local dragStart, startPos
 
 frame.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1
-	or input.UserInputType == Enum.UserInputType.Touch then
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
 		dragging = true
 		dragStart = input.Position
 		startPos = frame.Position
 
-		input.Changed:Connect(function()
-			if input.UserInputState == Enum.UserInputState.End then
-				dragging = false
-			end
-		end)
-	end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-	if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
-	or input.UserInputType == Enum.UserInputType.Touch) then
-		update(input)
-	end
-end)
+		input.Changed:
