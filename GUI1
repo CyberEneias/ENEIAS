@@ -1,6 +1,6 @@
--- Serviços
+-- ===== AUTOFARM COSTAS COM AUTO-ADJUST E ANTI-KNOCKBACK =====
 local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
 local CoreGui = game:GetService("CoreGui")
 
@@ -26,7 +26,6 @@ frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 frame.BorderSizePixel = 0
 frame.Active = true
 
--- Cantos arredondados
 local corner = Instance.new("UICorner")
 corner.CornerRadius = UDim.new(0, 12)
 corner.Parent = frame
@@ -44,10 +43,9 @@ textLabel.TextScaled = true
 textLabel.TextXAlignment = Enum.TextXAlignment.Left
 textLabel.TextYAlignment = Enum.TextYAlignment.Top
 
--- Informações
 local nomeExperiencia = game.Name
 
--- Atualização de data/hora
+-- Atualização data/hora
 task.spawn(function()
 	while frame.Parent do
 		local dataHora = os.date("%d/%m/%Y - %H:%M:%S")
@@ -56,7 +54,6 @@ task.spawn(function()
 			nomeExperiencia ..
 			"\n\nData e Hora:\n" ..
 			dataHora
-
 		task.wait(1)
 	end
 end)
@@ -91,28 +88,27 @@ frame.InputBegan:Connect(function(input)
 	end
 end)
 
-UserInputService.InputChanged:Connect(function(input)
+game:GetService("UserInputService").InputChanged:Connect(function(input)
 	if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
 	or input.UserInputType == Enum.UserInputType.Touch) then
 		update(input)
 	end
 end)
 
--- ===== AUTOFARM ORBITAL CORRIGIDO E ESTÁVEL =====
+-- ===== AUTOFARM CONFIG =====
 local autofarmEnabled = false
-
--- CONFIG
-local HEIGHT_OFFSET = 6
-local ORBIT_RADIUS = 3.5
-local ORBIT_SPEED = 1.2
-local UPDATE_DELAY = 0.15
-local SMOOTHNESS = 0.25
-local MAX_DISTANCE = 60 -- evita saltos absurdos
-
-local orbitAngle = 0
 local lockedNPC = nil
+local orbitAngle = 0
 
--- BOTÃO
+-- Ajustes do modo costas
+local BACK_DISTANCE = 3.5
+local HEIGHT_OFFSET = 2.5
+local SMOOTHNESS = 0.25
+local ROTATION_SMOOTH = 0.2
+local UPDATE_DELAY = 0.15
+local MAX_DISTANCE = 60
+
+-- Botão toggle
 local toggleButton = Instance.new("TextButton")
 toggleButton.Parent = frame
 toggleButton.Size = UDim2.new(0, 160, 0, 40)
@@ -127,7 +123,7 @@ local btnCorner = Instance.new("UICorner")
 btnCorner.CornerRadius = UDim.new(0, 8)
 btnCorner.Parent = toggleButton
 
--- ENCONTRA NPC MAIS PRÓXIMO (APENAS QUANDO NECESSÁRIO)
+-- Função para encontrar o NPC mais próximo
 local function findClosestNPC()
 	local character = player.Character
 	if not character or not character:FindFirstChild("HumanoidRootPart") then
@@ -155,7 +151,7 @@ local function findClosestNPC()
 	return closest
 end
 
--- LOOP PRINCIPAL
+-- Loop principal do autofarm
 task.spawn(function()
 	while true do
 		if autofarmEnabled then
@@ -170,26 +166,29 @@ task.spawn(function()
 					or lockedNPC.Humanoid.Health <= 0 then
 
 					lockedNPC = findClosestNPC()
-					orbitAngle = 0 -- reset seguro
+					orbitAngle = 0
 				end
 
 				if lockedNPC and lockedNPC:FindFirstChild("HumanoidRootPart") then
 					local npcRoot = lockedNPC.HumanoidRootPart
 
-					-- órbita progressiva
-					orbitAngle += ORBIT_SPEED * UPDATE_DELAY
-
-					local offset = Vector3.new(
-						math.cos(orbitAngle) * ORBIT_RADIUS,
-						HEIGHT_OFFSET,
-						math.sin(orbitAngle) * ORBIT_RADIUS
-					)
-
-					local targetPos = npcRoot.Position + offset
+					-- === MOVIMENTO COSTAS AUTO-ADJUST ===
+					local npcLook = npcRoot.CFrame.LookVector
+					local targetPos = npcRoot.Position
+						+ (-npcLook * BACK_DISTANCE)
+						+ Vector3.new(0, HEIGHT_OFFSET, 0)
 					local targetCFrame = CFrame.new(targetPos)
 
-					-- suavização segura
+					-- ANTI KNOCKBACK
+					root.AssemblyLinearVelocity = Vector3.zero
+					root.AssemblyAngularVelocity = Vector3.zero
+
+					-- MOVIMENTO SUAVE
 					root.CFrame = root.CFrame:Lerp(targetCFrame, SMOOTHNESS)
+
+					-- AUTO-ADJUST ROTATION (olhando para frente do NPC)
+					local lookAtCFrame = CFrame.new(root.Position, npcRoot.Position + Vector3.new(0, HEIGHT_OFFSET, 0))
+					root.CFrame = root.CFrame:Lerp(lookAtCFrame, ROTATION_SMOOTH)
 				end
 			end
 		end
@@ -198,7 +197,7 @@ task.spawn(function()
 	end
 end)
 
--- TOGGLE
+-- Toggle do botão
 toggleButton.MouseButton1Click:Connect(function()
 	autofarmEnabled = not autofarmEnabled
 	lockedNPC = nil
@@ -209,3 +208,4 @@ toggleButton.MouseButton1Click:Connect(function()
 		and Color3.fromRGB(0, 140, 0)
 		or Color3.fromRGB(40, 40, 40)
 end)
+
