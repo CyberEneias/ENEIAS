@@ -1,118 +1,193 @@
--- Execução momentânea (colar e rodar no console)
+-- SCRIPT TEMPORÁRIO - EXECUTOR
 
 if game.CoreGui:FindFirstChild("TempTestGUI") then
 	game.CoreGui.TempTestGUI:Destroy()
 end
 
 local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 
--- Infos da experiência
+-- Aguarda character
+local function getChar()
+	return player.Character or player.CharacterAdded:Wait()
+end
+
+-- Config
+local FARM_HEIGHT = 6
+local KILL_AURA_RANGE = 15
+local DAMAGE = 20
+
+-- Infos
 local experienceName = game.Name
 local executionDate = os.date("%d/%m/%Y - %H:%M:%S")
 
 -- Estados
 local autofarmEnabled = false
 local killAuraEnabled = false
+local minimized = false
 
 -- GUI
-local gui = Instance.new("ScreenGui")
+local gui = Instance.new("ScreenGui", game.CoreGui)
 gui.Name = "TempTestGUI"
 gui.ResetOnSpawn = false
-gui.Parent = game.CoreGui
 
-local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 320, 0, 210)
-frame.Position = UDim2.new(0, 20, 0, 20)
-frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+local frame = Instance.new("Frame", gui)
+frame.Size = UDim2.new(0, 320, 0, 230)
+frame.Position = UDim2.new(0, 40, 0, 40)
+frame.BackgroundColor3 = Color3.fromRGB(25,25,25)
 frame.BorderSizePixel = 0
-frame.Parent = gui
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0,12)
 
-local corner = Instance.new("UICorner", frame)
-corner.CornerRadius = UDim.new(0, 12)
+-- Top bar
+local topBar = Instance.new("Frame", frame)
+topBar.Size = UDim2.new(1,0,0,32)
+topBar.BackgroundColor3 = Color3.fromRGB(35,35,35)
+topBar.BorderSizePixel = 0
+Instance.new("UICorner", topBar).CornerRadius = UDim.new(0,12)
 
--- Título
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, -10, 0, 32)
-title.Position = UDim2.new(0, 5, 0, 5)
+local title = Instance.new("TextLabel", topBar)
+title.Size = UDim2.new(1,-90,1,0)
+title.Position = UDim2.new(0,10,0,0)
 title.BackgroundTransparency = 1
 title.Text = experienceName
 title.Font = Enum.Font.GothamBold
 title.TextScaled = true
-title.TextColor3 = Color3.fromRGB(255, 255, 255)
-title.Parent = frame
+title.TextXAlignment = Left
+title.TextColor3 = Color3.fromRGB(255,255,255)
 
--- Data
-local dateLabel = Instance.new("TextLabel")
-dateLabel.Size = UDim2.new(1, -10, 0, 22)
-dateLabel.Position = UDim2.new(0, 5, 0, 40)
+local minBtn = Instance.new("TextButton", topBar)
+minBtn.Size = UDim2.new(0,28,0,22)
+minBtn.Position = UDim2.new(1,-60,0,5)
+minBtn.Text = "-"
+minBtn.Font = Enum.Font.GothamBold
+minBtn.TextScaled = true
+minBtn.BackgroundColor3 = Color3.fromRGB(60,60,60)
+minBtn.TextColor3 = Color3.fromRGB(255,255,255)
+Instance.new("UICorner", minBtn).CornerRadius = UDim.new(0,6)
+
+local closeBtn = Instance.new("TextButton", topBar)
+closeBtn.Size = UDim2.new(0,28,0,22)
+closeBtn.Position = UDim2.new(1,-30,0,5)
+closeBtn.Text = "X"
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextScaled = true
+closeBtn.BackgroundColor3 = Color3.fromRGB(140,60,60)
+closeBtn.TextColor3 = Color3.fromRGB(255,255,255)
+Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0,6)
+
+local content = Instance.new("Frame", frame)
+content.Position = UDim2.new(0,0,0,32)
+content.Size = UDim2.new(1,0,1,-32)
+content.BackgroundTransparency = 1
+
+local dateLabel = Instance.new("TextLabel", content)
+dateLabel.Size = UDim2.new(1,-20,0,22)
+dateLabel.Position = UDim2.new(0,10,0,10)
 dateLabel.BackgroundTransparency = 1
 dateLabel.Text = executionDate
 dateLabel.Font = Enum.Font.Gotham
 dateLabel.TextScaled = true
-dateLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
-dateLabel.Parent = frame
+dateLabel.TextColor3 = Color3.fromRGB(180,180,180)
 
--- Função Toggle
-local function createToggle(name, yPos, callback)
-	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.new(1, -20, 0, 38)
-	btn.Position = UDim2.new(0, 10, 0, yPos)
-	btn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-	btn.Text = name .. ": OFF"
+-- Toggle creator
+local function createToggle(text, y, callback)
+	local btn = Instance.new("TextButton", content)
+	btn.Size = UDim2.new(1,-20,0,38)
+	btn.Position = UDim2.new(0,10,0,y)
+	btn.BackgroundColor3 = Color3.fromRGB(45,45,45)
+	btn.Text = text .. ": OFF"
 	btn.Font = Enum.Font.Gotham
 	btn.TextScaled = true
-	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-	btn.Parent = frame
-
-	local c = Instance.new("UICorner", btn)
-	c.CornerRadius = UDim.new(0, 8)
+	btn.TextColor3 = Color3.fromRGB(255,255,255)
+	Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
 
 	local enabled = false
 	btn.MouseButton1Click:Connect(function()
 		enabled = not enabled
-		btn.Text = name .. (enabled and ": ON" or ": OFF")
-		btn.BackgroundColor3 = enabled and Color3.fromRGB(70, 120, 70) or Color3.fromRGB(45, 45, 45)
+		btn.Text = text .. (enabled and ": ON" or ": OFF")
+		btn.BackgroundColor3 = enabled and Color3.fromRGB(70,120,70) or Color3.fromRGB(45,45,45)
 		callback(enabled)
 	end)
 end
 
--- Toggles
-createToggle("Autofarm", 75, function(state)
-	autofarmEnabled = state
+createToggle("Autofarm (Above NPCs)", 45, function(v) autofarmEnabled = v end)
+createToggle("Kill Aura", 95, function(v) killAuraEnabled = v end)
+
+-- Minimize / Close
+minBtn.MouseButton1Click:Connect(function()
+	minimized = not minimized
+	content.Visible = not minimized
+	frame.Size = minimized and UDim2.new(0,320,0,32) or UDim2.new(0,320,0,230)
 end)
 
-createToggle("Kill Aura", 125, function(state)
-	killAuraEnabled = state
+closeBtn.MouseButton1Click:Connect(function()
+	gui:Destroy()
 end)
 
--- Autofarm loop (exemplo genérico)
+-- Drag
+local dragging, dragStart, startPos
+topBar.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		dragging = true
+		dragStart = input.Position
+		startPos = frame.Position
+	end
+end)
+
+UIS.InputChanged:Connect(function(input)
+	if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+		local delta = input.Position - dragStart
+		frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+	end
+end)
+
+UIS.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		dragging = false
+	end
+end)
+
+-- === NPC Finder ===
+local function getNPCs()
+	local npcs = {}
+	for _, m in pairs(workspace:GetDescendants()) do
+		if m:IsA("Model") and m ~= getChar() then
+			local hum = m:FindFirstChildOfClass("Humanoid")
+			local root = m:FindFirstChild("HumanoidRootPart")
+			if hum and root and hum.Health > 0 then
+				table.insert(npcs, m)
+			end
+		end
+	end
+	return npcs
+end
+
+-- Autofarm (Above NPCs)
 task.spawn(function()
 	while gui.Parent do
-		task.wait(1)
+		task.wait(0.5)
 		if autofarmEnabled then
-			-- Ajuste conforme o jogo:
-			-- mover personagem
-			-- coletar itens
-			-- disparar remotes
-			print("[Autofarm] ativo")
+			local char = getChar()
+			local hrp = char:FindFirstChild("HumanoidRootPart")
+			if hrp then
+				for _, npc in pairs(getNPCs()) do
+					local root = npc:FindFirstChild("HumanoidRootPart")
+					if root then
+						hrp.CFrame = root.CFrame * CFrame.new(0, FARM_HEIGHT, 0)
+						task.wait(0.2)
+						break
+					end
+				end
+			end
 		end
 	end
 end)
 
--- Kill Aura loop (exemplo genérico)
+-- Kill Aura
 task.spawn(function()
 	while gui.Parent do
-		task.wait(0.25)
-		if killAuraEnabled then
-			-- Ajuste conforme o jogo:
-			-- detectar NPCs próximos
-			-- atacar automaticamente
-			print("[Kill Aura] ativa")
-		end
-	end
-end)
-
-print("GUI temporário carregado com sucesso.")
+		task.wait(0.2)
+		if ki
