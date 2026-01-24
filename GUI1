@@ -1,42 +1,55 @@
 -- Serviços
 local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
+local CoreGui = game:GetService("CoreGui")
 
--- Proteção básica
-if not player then
-	warn("Jogador não encontrado.")
-	return
-end
+if not player then return end
 
 -- Remove GUI antiga se existir
 pcall(function()
-	player.PlayerGui:FindFirstChild("InfoExperienciaGui"):Destroy()
+	CoreGui:FindFirstChild("InfoExperienciaGui"):Destroy()
 end)
 
--- Criando GUI
+-- GUI principal
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "InfoExperienciaGui"
 screenGui.ResetOnSpawn = false
-screenGui.Parent = player:WaitForChild("PlayerGui")
+screenGui.Parent = CoreGui
 
+-- Frame principal
+local frame = Instance.new("Frame")
+frame.Parent = screenGui
+frame.Size = UDim2.new(0, 520, 0, 150)
+frame.Position = UDim2.new(0, 40, 0, 40)
+frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+frame.BorderSizePixel = 0
+frame.Active = true
+
+-- Cantos arredondados
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 12)
+corner.Parent = frame
+
+-- Texto
 local textLabel = Instance.new("TextLabel")
-textLabel.Parent = screenGui
-textLabel.Size = UDim2.new(0, 520, 0, 130)
-textLabel.Position = UDim2.new(0, 20, 0, 20)
-textLabel.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-textLabel.BackgroundTransparency = 0.15
+textLabel.Parent = frame
+textLabel.Size = UDim2.new(1, -20, 1, -20)
+textLabel.Position = UDim2.new(0, 10, 0, 10)
+textLabel.BackgroundTransparency = 1
 textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 textLabel.Font = Enum.Font.SourceSansBold
 textLabel.TextWrapped = true
 textLabel.TextScaled = true
-textLabel.BorderSizePixel = 0
+textLabel.TextXAlignment = Enum.TextXAlignment.Left
+textLabel.TextYAlignment = Enum.TextYAlignment.Top
 
 -- Informações
 local nomeExperiencia = game.Name
 
--- Loop de atualização
+-- Atualização de data/hora
 task.spawn(function()
-	while screenGui.Parent do
+	while frame.Parent do
 		local dataHora = os.date("%d/%m/%Y - %H:%M:%S")
 		textLabel.Text =
 			"Experiência em Teste:\n" ..
@@ -45,5 +58,42 @@ task.spawn(function()
 			dataHora
 
 		task.wait(1)
+	end
+end)
+
+-- ===== DRAG =====
+local dragging = false
+local dragStart
+local startPos
+
+local function update(input)
+	local delta = input.Position - dragStart
+	frame.Position = UDim2.new(
+		startPos.X.Scale,
+		startPos.X.Offset + delta.X,
+		startPos.Y.Scale,
+		startPos.Y.Offset + delta.Y
+	)
+end
+
+frame.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1
+	or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		dragStart = input.Position
+		startPos = frame.Position
+
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+			end
+		end)
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+	or input.UserInputType == Enum.UserInputType.Touch) then
+		update(input)
 	end
 end)
