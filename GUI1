@@ -1,4 +1,4 @@
--- ===== AUTOFARM COSTAS FIXO + KILL AURA INTELIGENTE =====
+-- ===== AUTOFARM + KILL AURA NATURAL =====
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local player = Players.LocalPlayer
@@ -11,13 +11,12 @@ pcall(function()
 	CoreGui:FindFirstChild("InfoExperienciaGui"):Destroy()
 end)
 
--- GUI principal
+-- ===== GUI =====
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "InfoExperienciaGui"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = CoreGui
 
--- Frame
 local frame = Instance.new("Frame")
 frame.Parent = screenGui
 frame.Size = UDim2.new(0, 520, 0, 150)
@@ -30,7 +29,6 @@ local corner = Instance.new("UICorner")
 corner.CornerRadius = UDim.new(0, 12)
 corner.Parent = frame
 
--- Texto
 local textLabel = Instance.new("TextLabel")
 textLabel.Parent = frame
 textLabel.Size = UDim2.new(1, -20, 1, -20)
@@ -44,24 +42,16 @@ textLabel.TextXAlignment = Enum.TextXAlignment.Left
 textLabel.TextYAlignment = Enum.TextYAlignment.Top
 
 local nomeExperiencia = game.Name
-
--- Atualização de data/hora
 task.spawn(function()
 	while frame.Parent do
-		local dataHora = os.date("%d/%m/%Y - %H:%M:%S")
-		textLabel.Text =
-			"Experiência em Teste:\n" ..
-			nomeExperiencia ..
-			"\n\nData e Hora:\n" ..
-			dataHora
+		textLabel.Text = "Experiência em Teste:\n"..nomeExperiencia.."\n\nData e Hora:\n"..os.date("%d/%m/%Y - %H:%M:%S")
 		task.wait(1)
 	end
 end)
 
--- DRAG
-local dragging = false
-local dragStart
-local startPos
+-- Drag GUI
+local dragging, dragStart, startPos = false, nil, nil
+local UserInputService = game:GetService("UserInputService")
 
 local function update(input)
 	local delta = input.Position - dragStart
@@ -74,110 +64,98 @@ local function update(input)
 end
 
 frame.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1
-	or input.UserInputType == Enum.UserInputType.Touch then
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 		dragging = true
 		dragStart = input.Position
 		startPos = frame.Position
-
 		input.Changed:Connect(function()
-			if input.UserInputState == Enum.UserInputState.End then
-				dragging = false
-			end
+			if input.UserInputState == Enum.UserInputState.End then dragging = false end
 		end)
 	end
 end)
 
-game:GetService("UserInputService").InputChanged:Connect(function(input)
-	if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
-	or input.UserInputType == Enum.UserInputType.Touch) then
+UserInputService.InputChanged:Connect(function(input)
+	if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 		update(input)
 	end
 end)
 
 -- ===== CONFIGURAÇÕES =====
 local autofarmEnabled = false
-local lockedNPC = nil
 local killAuraEnabled = false
-
+local lockedNPC = nil
 local BACK_DISTANCE = 3.5
 local HEIGHT_OFFSET = 2.5
-local UPDATE_DELAY = 0.15
+local UPDATE_DELAY = 0.2
 local MAX_DISTANCE = 60
-
-local KILL_RADIUS = 10       -- raio de ataque
-local KILL_DELAY = 0.25      -- delay entre ataques
+local KILL_RADIUS = 10
+local KILL_DELAY_MIN, KILL_DELAY_MAX = 0.2, 0.45 -- ataque aleatório
+local activeNPCs = {}
 
 -- ===== BOTÕES GUI =====
-local toggleButton = Instance.new("TextButton")
-toggleButton.Parent = frame
-toggleButton.Size = UDim2.new(0, 160, 0, 40)
-toggleButton.Position = UDim2.new(1, -170, 1, -50)
-toggleButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-toggleButton.Font = Enum.Font.SourceSansBold
-toggleButton.TextSize = 18
-toggleButton.Text = "Autofarm: OFF"
-local btnCorner = Instance.new("UICorner")
-btnCorner.CornerRadius = UDim.new(0, 8)
-btnCorner.Parent = toggleButton
+local function createButton(name, posY)
+	local btn = Instance.new("TextButton")
+	btn.Parent = frame
+	btn.Size = UDim2.new(0, 160, 0, 40)
+	btn.Position = UDim2.new(1, -170, 1, posY)
+	btn.BackgroundColor3 = Color3.fromRGB(40,40,40)
+	btn.TextColor3 = Color3.fromRGB(255,255,255)
+	btn.Font = Enum.Font.SourceSansBold
+	btn.TextSize = 18
+	btn.Text = name
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0,8)
+	corner.Parent = btn
+	return btn
+end
 
-local killButton = Instance.new("TextButton")
-killButton.Parent = frame
-killButton.Size = UDim2.new(0, 160, 0, 40)
-killButton.Position = UDim2.new(1, -170, 1, -100)
-killButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-killButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-killButton.Font = Enum.Font.SourceSansBold
-killButton.TextSize = 18
-killButton.Text = "Kill Aura: OFF"
-local killCorner = Instance.new("UICorner")
-killCorner.CornerRadius = UDim.new(0, 8)
-killCorner.Parent = killButton
+local toggleButton = createButton("Autofarm: OFF", -50)
+local killButton = createButton("Kill Aura: OFF", -100)
 
 toggleButton.MouseButton1Click:Connect(function()
 	autofarmEnabled = not autofarmEnabled
 	lockedNPC = nil
 	toggleButton.Text = autofarmEnabled and "Autofarm: ON" or "Autofarm: OFF"
-	toggleButton.BackgroundColor3 = autofarmEnabled
-		and Color3.fromRGB(0, 140, 0)
-		or Color3.fromRGB(40, 40, 40)
+	toggleButton.BackgroundColor3 = autofarmEnabled and Color3.fromRGB(0,140,0) or Color3.fromRGB(40,40,40)
 end)
 
 killButton.MouseButton1Click:Connect(function()
 	killAuraEnabled = not killAuraEnabled
 	killButton.Text = killAuraEnabled and "Kill Aura: ON" or "Kill Aura: OFF"
-	killButton.BackgroundColor3 = killAuraEnabled
-		and Color3.fromRGB(140, 0, 0)
-		or Color3.fromRGB(40, 40, 40)
+	killButton.BackgroundColor3 = killAuraEnabled and Color3.fromRGB(140,0,0) or Color3.fromRGB(40,40,40)
+end)
+
+-- ===== LISTA DE NPCS ATIVOS (1 vez por segundo) =====
+task.spawn(function()
+	while true do
+		local temp = {}
+		for _, model in ipairs(workspace:GetDescendants()) do
+			if model:IsA("Model") and model:FindFirstChild("Humanoid") and model:FindFirstChild("HumanoidRootPart") and model.Humanoid.Health > 0 then
+				table.insert(temp, model)
+			end
+		end
+		activeNPCs = temp
+		task.wait(1)
+	end
 end)
 
 -- ===== FUNÇÕES =====
 local function findClosestNPC()
 	local character = player.Character
-	if not character or not character:FindFirstChild("HumanoidRootPart") then return nil end
-
-	local root = character.HumanoidRootPart
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not root then return nil end
 	local closest, minDist = nil, MAX_DISTANCE
-
-	for _, model in ipairs(workspace:GetDescendants()) do
-		if model:IsA("Model")
-			and model ~= character
-			and model:FindFirstChild("Humanoid")
-			and model:FindFirstChild("HumanoidRootPart")
-			and model.Humanoid.Health > 0 then
-
-			local dist = (root.Position - model.HumanoidRootPart.Position).Magnitude
-			if dist < minDist then
-				minDist = dist
-				closest = model
-			end
+	for _, model in ipairs(activeNPCs) do
+		local dist = (root.Position - model.HumanoidRootPart.Position).Magnitude
+		if dist < minDist then
+			minDist = dist
+			closest = model
 		end
 	end
 	return closest
 end
 
--- ===== LOOP AUTOFARM =====
+-- ===== AUTOFARM ESTÁTICO =====
 local lastUpdate = 0
 RunService.Heartbeat:Connect(function(dt)
 	if not autofarmEnabled then return end
@@ -189,64 +167,52 @@ RunService.Heartbeat:Connect(function(dt)
 	local root = character and character:FindFirstChild("HumanoidRootPart")
 	if not root then return end
 
-	if not lockedNPC
-		or not lockedNPC.Parent
-		or not lockedNPC:FindFirstChild("Humanoid")
-		or lockedNPC.Humanoid.Health <= 0 then
+	if not lockedNPC or not lockedNPC.Parent or not lockedNPC:FindFirstChild("Humanoid") or lockedNPC.Humanoid.Health <= 0 then
 		lockedNPC = findClosestNPC()
 	end
 
 	if lockedNPC and lockedNPC:FindFirstChild("HumanoidRootPart") then
 		local npcRoot = lockedNPC.HumanoidRootPart
-		local npcLook = npcRoot.CFrame.LookVector
-		local targetPos = npcRoot.Position + (-npcLook * BACK_DISTANCE) + Vector3.new(0, HEIGHT_OFFSET, 0)
-
+		local targetPos = npcRoot.Position + (-npcRoot.CFrame.LookVector * BACK_DISTANCE) + Vector3.new(0, HEIGHT_OFFSET,0)
 		root.AssemblyLinearVelocity = Vector3.zero
 		root.AssemblyAngularVelocity = Vector3.zero
 		root.CFrame = CFrame.new(targetPos)
 	end
 end)
 
--- ===== LOOP KILL AURA INTELIGENTE =====
+-- ===== KILL AURA “NATURAL” =====
 local lastKill = 0
 RunService.Heartbeat:Connect(function(dt)
 	if not killAuraEnabled then return end
 	lastKill = lastKill + dt
-	if lastKill < KILL_DELAY then return end
-	lastKill = 0
+	if lastKill < KILL_DELAY_MIN then return end
 
 	local character = player.Character
 	local root = character and character:FindFirstChild("HumanoidRootPart")
 	if not root then return end
 
-	-- Prioridade no NPC que autofarm está seguindo
 	local targets = {}
 	if lockedNPC and lockedNPC:FindFirstChild("HumanoidRootPart") and lockedNPC.Humanoid.Health > 0 then
 		table.insert(targets, lockedNPC)
 	end
-
-	-- NPCs próximos dentro do raio
-	for _, model in ipairs(workspace:GetDescendants()) do
-		if model:IsA("Model")
-			and model ~= character
-			and model:FindFirstChild("Humanoid")
-			and model:FindFirstChild("HumanoidRootPart")
-			and model.Humanoid.Health > 0 then
-
-			local dist = (root.Position - model.HumanoidRootPart.Position).Magnitude
-			if dist <= KILL_RADIUS and model ~= lockedNPC then
-				table.insert(targets, model)
-			end
+	for _, npc in ipairs(activeNPCs) do
+		if npc ~= lockedNPC and (root.Position - npc.HumanoidRootPart.Position).Magnitude <= KILL_RADIUS then
+			table.insert(targets, npc)
 		end
 	end
 
-	-- Ataque natural em ordem
 	for _, npc in ipairs(targets) do
 		if npc and npc:FindFirstChild("Humanoid") then
-			-- ataque genérico (TakeDamage ou função do jogo)
-			pcall(function()
-				npc.Humanoid:TakeDamage(1) -- ajuste conforme o seu jogo
+			-- Simula ataque natural com delay aleatório
+			local delayTime = math.random()*(KILL_DELAY_MAX-KILL_DELAY_MIN)+KILL_DELAY_MIN
+			task.spawn(function()
+				task.wait(delayTime)
+				if npc.Humanoid and npc.Humanoid.Health > 0 then
+					pcall(function()
+						npc.Humanoid:TakeDamage(1) -- ajuste conforme seu jogo
+					end)
+				end
 			end)
 		end
 	end
-end)
+	lastKi
