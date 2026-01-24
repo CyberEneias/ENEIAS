@@ -1,0 +1,255 @@
+-- ===== AUTOFARM COSTAS FIXO (COMPASSO) COM ANTI-KNOCKBACK =====
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+local CoreGui = game:GetService("CoreGui")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+if not player then return end
+
+-- Remove GUI antiga
+pcall(function()
+	CoreGui:FindFirstChild("InfoExperienciaGui"):Destroy()
+end)
+
+-- GUI principal
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "InfoExperienciaGui"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = CoreGui
+
+-- Frame
+local frame = Instance.new("Frame")
+frame.Parent = screenGui
+frame.Size = UDim2.new(0, 520, 0, 180)
+frame.Position = UDim2.new(0, 40, 0, 40)
+frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+frame.BorderSizePixel = 0
+frame.Active = true
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 12)
+corner.Parent = frame
+
+-- Texto principal
+local textLabel = Instance.new("TextLabel")
+textLabel.Parent = frame
+textLabel.Size = UDim2.new(1, -20, 1, -100)
+textLabel.Position = UDim2.new(0, 10, 0, 10)
+textLabel.BackgroundTransparency = 1
+textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+textLabel.Font = Enum.Font.SourceSansBold
+textLabel.TextWrapped = true
+textLabel.TextScaled = true
+textLabel.TextXAlignment = Enum.TextXAlignment.Left
+textLabel.TextYAlignment = Enum.TextYAlignment.Top
+
+local nomeExperiencia = game.Name
+
+-- Atualização de data/hora
+task.spawn(function()
+	while frame.Parent do
+		local dataHora = os.date("%d/%m/%Y - %H:%M:%S")
+		textLabel.Text =
+			"Experiência em Teste:\n" ..
+			nomeExperiencia ..
+			"\n\nData e Hora:\n" ..
+			dataHora
+		task.wait(1)
+	end
+end)
+
+-- Status do NPC
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Parent = frame
+statusLabel.Size = UDim2.new(1, -20, 0, 20)
+statusLabel.Position = UDim2.new(0, 10, 1, -80)
+statusLabel.BackgroundTransparency = 1
+statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+statusLabel.Font = Enum.Font.SourceSans
+statusLabel.TextSize = 14
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+statusLabel.Text = "NPC: Nenhum"
+
+-- Botão de fechar
+local closeButton = Instance.new("TextButton")
+closeButton.Parent = frame
+closeButton.Size = UDim2.new(0, 30, 0, 30)
+closeButton.Position = UDim2.new(1, -35, 0, 5)
+closeButton.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeButton.Font = Enum.Font.SourceSansBold
+closeButton.Text = "X"
+closeButton.TextSize = 18
+
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0, 8)
+closeCorner.Parent = closeButton
+
+closeButton.MouseButton1Click:Connect(function()
+	screenGui:Destroy()
+end)
+
+-- DRAG
+local dragging = false
+local dragStart
+local startPos
+
+local function update(input)
+	local delta = input.Position - dragStart
+	frame.Position = UDim2.new(
+		startPos.X.Scale,
+		startPos.X.Offset + delta.X,
+		startPos.Y.Scale,
+		startPos.Y.Offset + delta.Y
+	)
+end
+
+frame.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1
+	or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		dragStart = input.Position
+		startPos = frame.Position
+
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+			end
+		end)
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+	or input.UserInputType == Enum.UserInputType.Touch) then
+		update(input)
+	end
+end)
+
+-- ===== AUTOFARM CONFIG =====
+local autofarmEnabled = false
+local lockedNPC = nil
+local connection = nil
+
+-- CONFIGURAÇÕES
+local BACK_DISTANCE = 3.5
+local HEIGHT_OFFSET = 2.5
+local MAX_DISTANCE = 60
+
+-- Botão toggle
+local toggleButton = Instance.new("TextButton")
+toggleButton.Parent = frame
+toggleButton.Size = UDim2.new(0, 160, 0, 40)
+toggleButton.Position = UDim2.new(1, -170, 1, -50)
+toggleButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleButton.Font = Enum.Font.SourceSansBold
+toggleButton.TextSize = 18
+toggleButton.Text = "Autofarm: OFF"
+
+local btnCorner = Instance.new("UICorner")
+btnCorner.CornerRadius = UDim.new(0, 8)
+btnCorner.Parent = toggleButton
+
+-- Função para encontrar NPC mais próximo
+local function findClosestNPC()
+	local character = player.Character
+	if not character or not character:FindFirstChild("HumanoidRootPart") then
+		return nil
+	end
+
+	local root = character.HumanoidRootPart
+	local closest, minDist = nil, MAX_DISTANCE
+
+	for _, model in ipairs(workspace:GetDescendants()) do
+		if model:IsA("Model")
+			and model ~= character
+			and not Players:GetPlayerFromCharacter(model) -- Ignora jogadores
+			and model:FindFirstChild("Humanoid")
+			and model:FindFirstChild("HumanoidRootPart")
+			and model.Humanoid.Health > 0 then
+
+			local dist = (root.Position - model.HumanoidRootPart.Position).Magnitude
+			if dist < minDist then
+				minDist = dist
+				closest = model
+			end
+		end
+	end
+
+	return closest
+end
+
+-- Função de autofarm
+local function autofarmLoop()
+	if not autofarmEnabled then return end
+	
+	pcall(function()
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+
+		if root then
+			-- valida NPC travado
+			if not lockedNPC
+				or not lockedNPC.Parent
+				or not lockedNPC:FindFirstChild("Humanoid")
+				or lockedNPC.Humanoid.Health <= 0 then
+
+				lockedNPC = findClosestNPC()
+			end
+
+			if lockedNPC and lockedNPC:FindFirstChild("HumanoidRootPart") then
+				local npcRoot = lockedNPC.HumanoidRootPart
+
+				-- === POSIÇÃO ESTÁTICA ATRÁS DO NPC ===
+				local npcLook = npcRoot.CFrame.LookVector
+				local targetPos = npcRoot.Position
+					+ (-npcLook * BACK_DISTANCE)
+					+ Vector3.new(0, HEIGHT_OFFSET, 0)
+
+				-- ANTI KNOCKBACK
+				root.AssemblyLinearVelocity = Vector3.zero
+				root.AssemblyAngularVelocity = Vector3.zero
+
+				-- POSICIONA ESTÁTICO
+				root.CFrame = CFrame.new(targetPos)
+				
+				-- Atualiza status
+				statusLabel.Text = "NPC: " .. lockedNPC.Name
+			else
+				statusLabel.Text = "NPC: Nenhum"
+			end
+		end
+	end)
+end
+
+-- Toggle
+toggleButton.MouseButton1Click:Connect(function()
+	autofarmEnabled = not autofarmEnabled
+	
+	if autofarmEnabled then
+		-- Conecta ao Heartbeat para melhor performance
+		if connection then connection:Disconnect() end
+		connection = RunService.Heartbeat:Connect(autofarmLoop)
+		toggleButton.Text = "Autofarm: ON"
+		toggleButton.BackgroundColor3 = Color3.fromRGB(0, 140, 0)
+	else
+		-- Desconecta do Heartbeat
+		if connection then 
+			connection:Disconnect()
+			connection = nil
+		end
+		lockedNPC = nil
+		toggleButton.Text = "Autofarm: OFF"
+		toggleButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+		statusLabel.Text = "NPC: Nenhum"
+	end
+end)
+
+-- Limpeza quando a GUI for fechada
+screenGui.Destroying:Connect(function()
+	if connection then
+		connection:Disconnect()
+	end
+end)
