@@ -71,6 +71,92 @@ statusLabel.TextSize = 14
 statusLabel.TextXAlignment = Enum.TextXAlignment.Left
 statusLabel.Text = "NPC: Nenhum"
 
+-- ===== MOVEMENT SPEED SLIDER =====
+local sliderLabel = Instance.new("TextLabel")
+sliderLabel.Parent = frame
+sliderLabel.Size = UDim2.new(1, -20, 0, 20)
+sliderLabel.Position = UDim2.new(0, 10, 1, -55) -- abaixo do statusLabel
+sliderLabel.BackgroundTransparency = 1
+sliderLabel.TextColor3 = Color3.fromRGB(200, 200, 255)
+sliderLabel.Font = Enum.Font.SourceSans
+sliderLabel.TextSize = 14
+sliderLabel.TextXAlignment = Enum.TextXAlignment.Left
+sliderLabel.Text = "Speed: 16"
+
+local sliderFrame = Instance.new("Frame")
+sliderFrame.Parent = frame
+sliderFrame.Size = UDim2.new(0, 200, 0, 20)
+sliderFrame.Position = UDim2.new(0, 10, 1, -30)
+sliderFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+local sliderCorner = Instance.new("UICorner")
+sliderCorner.CornerRadius = UDim.new(0, 5)
+sliderCorner.Parent = sliderFrame
+
+local sliderBar = Instance.new("Frame")
+sliderBar.Parent = sliderFrame
+sliderBar.Size = UDim2.new(0, 0, 1, 0)
+sliderBar.BackgroundColor3 = Color3.fromRGB(0, 140, 0)
+local barCorner = Instance.new("UICorner")
+barCorner.CornerRadius = UDim.new(0, 5)
+barCorner.Parent = sliderBar
+
+local sliderButton = Instance.new("TextButton")
+sliderButton.Parent = sliderFrame
+sliderButton.Size = UDim2.new(0, 20, 1, 0)
+sliderButton.Position = UDim2.new(0, 0, 0, 0)
+sliderButton.BackgroundColor3 = Color3.fromRGB(200, 200, 255)
+sliderButton.Text = ""
+local buttonCorner = Instance.new("UICorner")
+buttonCorner.CornerRadius = UDim.new(0, 10)
+buttonCorner.Parent = sliderButton
+
+local MIN_SPEED = 14
+local MAX_SPEED = 160
+local movementSpeed = 16
+
+local function updateSpeed(newValue)
+	movementSpeed = MIN_SPEED + (MAX_SPEED - MIN_SPEED) * newValue
+	local character = player.Character
+	if character and character:FindFirstChild("Humanoid") then
+		character.Humanoid.WalkSpeed = movementSpeed
+	end
+	sliderLabel.Text = "Speed: " .. math.floor(movementSpeed)
+	sliderBar.Size = UDim2.new(newValue, 0, 1, 0)
+	sliderButton.Position = UDim2.new(newValue, -10, 0, 0)
+end
+
+local dragging = false
+sliderButton.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		dragging = true
+	end
+end)
+sliderButton.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		dragging = false
+	end
+end)
+UserInputService.InputChanged:Connect(function(input)
+	if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+		local pos = math.clamp((input.Position.X - sliderFrame.AbsolutePosition.X) / sliderFrame.AbsoluteSize.X, 0, 1)
+		updateSpeed(pos)
+	end
+end)
+
+sliderFrame.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		local pos = math.clamp((input.Position.X - sliderFrame.AbsolutePosition.X) / sliderFrame.AbsoluteSize.X, 0, 1)
+		updateSpeed(pos)
+	end
+end)
+
+updateSpeed((movementSpeed - MIN_SPEED) / (MAX_SPEED - MIN_SPEED))
+
+player.CharacterAdded:Connect(function(char)
+	task.wait(0.5)
+	updateSpeed((movementSpeed - MIN_SPEED) / (MAX_SPEED - MIN_SPEED))
+end)
+
 -- Botão de fechar
 local closeButton = Instance.new("TextButton")
 closeButton.Parent = frame
@@ -91,7 +177,7 @@ closeButton.MouseButton1Click:Connect(function()
 end)
 
 -- DRAG
-local dragging = false
+local draggingFrame = false
 local dragStart
 local startPos
 
@@ -108,20 +194,20 @@ end
 frame.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1
 	or input.UserInputType == Enum.UserInputType.Touch then
-		dragging = true
+		draggingFrame = true
 		dragStart = input.Position
 		startPos = frame.Position
 
 		input.Changed:Connect(function()
 			if input.UserInputState == Enum.UserInputState.End then
-				dragging = false
+				draggingFrame = false
 			end
 		end)
 	end
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-	if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+	if draggingFrame and (input.UserInputType == Enum.UserInputType.MouseMovement
 	or input.UserInputType == Enum.UserInputType.Touch) then
 		update(input)
 	end
@@ -165,7 +251,7 @@ local function findClosestNPC()
 	for _, model in ipairs(workspace:GetDescendants()) do
 		if model:IsA("Model")
 			and model ~= character
-			and not Players:GetPlayerFromCharacter(model) -- Ignora jogadores
+			and not Players:GetPlayerFromCharacter(model)
 			and model:FindFirstChild("Humanoid")
 			and model:FindFirstChild("HumanoidRootPart")
 			and model.Humanoid.Health > 0 then
@@ -190,7 +276,6 @@ local function autofarmLoop()
 		local root = character and character:FindFirstChild("HumanoidRootPart")
 
 		if root then
-			-- valida NPC travado
 			if not lockedNPC
 				or not lockedNPC.Parent
 				or not lockedNPC:FindFirstChild("Humanoid")
@@ -202,20 +287,16 @@ local function autofarmLoop()
 			if lockedNPC and lockedNPC:FindFirstChild("HumanoidRootPart") then
 				local npcRoot = lockedNPC.HumanoidRootPart
 
-				-- === POSIÇÃO ESTÁTICA ATRÁS DO NPC ===
 				local npcLook = npcRoot.CFrame.LookVector
 				local targetPos = npcRoot.Position
 					+ (-npcLook * BACK_DISTANCE)
 					+ Vector3.new(0, HEIGHT_OFFSET, 0)
 
-				-- ANTI KNOCKBACK
 				root.AssemblyLinearVelocity = Vector3.zero
 				root.AssemblyAngularVelocity = Vector3.zero
 
-				-- POSICIONA ESTÁTICO
 				root.CFrame = CFrame.new(targetPos)
 				
-				-- Atualiza status
 				statusLabel.Text = "NPC: " .. lockedNPC.Name
 			else
 				statusLabel.Text = "NPC: Nenhum"
@@ -229,13 +310,11 @@ toggleButton.MouseButton1Click:Connect(function()
 	autofarmEnabled = not autofarmEnabled
 	
 	if autofarmEnabled then
-		-- Conecta ao Heartbeat para melhor performance
 		if connection then connection:Disconnect() end
 		connection = RunService.Heartbeat:Connect(autofarmLoop)
 		toggleButton.Text = "Autofarm: ON"
 		toggleButton.BackgroundColor3 = Color3.fromRGB(0, 140, 0)
 	else
-		-- Desconecta do Heartbeat
 		if connection then 
 			connection:Disconnect()
 			connection = nil
