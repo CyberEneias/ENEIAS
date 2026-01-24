@@ -102,7 +102,7 @@ local lockedNPC = nil
 local BACK_DISTANCE = 3.5
 local HEIGHT_OFFSET = 2.5
 local UPDATE_DELAY = 0.15
-local MAX_DISTANCE = 60
+local MAX_DISTANCE = 10
 
 -- Botão toggle
 local toggleButton = Instance.new("TextButton")
