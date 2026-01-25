@@ -14,7 +14,7 @@ local CONFIG = {
 	MAX_DISTANCE = 60,
 	UPDATE_INTERVAL = 1,
 	GUI_NAME = "InfoExperienciaGui",
-	NPC_SCAN_INTERVAL = 0.5
+	NPC_SCAN_INTERVAL = 0.3
 }
 
 local COLORS = {
@@ -47,10 +47,7 @@ local state = {
 	lastNPCScan = 0,
 	npcCache = {},
 	connections = {},
-	guiVisible = true,
-	killAuraEnabled = false,
-	lastHitTime = {},
-	lastCacheCleanup = 0
+	guiVisible = true
 }
 
 -- ===== UTILITY FUNCTIONS =====
@@ -89,15 +86,15 @@ local function createButton(parent, size, position, text, color)
 	btn.AutoButtonColor = false
 	createUICorner(8, btn)
 	
-	-- Hover effect (otimizado)
-	local hoverColor = Color3.fromRGB(
-		math.min(255, color.R * 255 + 20),
-		math.min(255, color.G * 255 + 20),
-		math.min(255, color.B * 255 + 20)
-	)
+	-- Hover effect
 	btn.MouseEnter:Connect(function()
-		btn.BackgroundColor3 = hoverColor
+		btn.BackgroundColor3 = Color3.fromRGB(
+			math.min(255, color.R * 255 + 20),
+			math.min(255, color.G * 255 + 20),
+			math.min(255, color.B * 255 + 20)
+		)
 	end)
+	
 	btn.MouseLeave:Connect(function()
 		btn.BackgroundColor3 = color
 	end)
@@ -231,7 +228,6 @@ statusLabel.Text = "🎯 NPC: Nenhum"
 local buttonY = 85
 local autofarmBtn = createButton(container, UDim2_new(0, 200, 0, 45), UDim2_new(0, 0, 0, buttonY), "🤖 Autofarm: OFF", COLORS.BTN_OFF)
 local jumpBtn = createButton(container, UDim2_new(0, 200, 0, 45), UDim2_new(0, 220, 0, buttonY), "🚀 Infinite Jump: OFF", COLORS.BTN_OFF)
-local killAuraBtn = createButton(container, UDim2_new(0, 200, 0, 45), UDim2_new(0, 440, 0, buttonY), "⚔️ Kill Aura: OFF", COLORS.BTN_OFF)
 
 -- Speed Section
 local speedFrame = Instance.new("Frame")
@@ -260,7 +256,7 @@ speedBox.Position = UDim2_new(0, 15, 0, 35)
 speedBox.BackgroundColor3 = COLORS.INPUT_BG
 speedBox.TextColor3 = COLORS.TEXT
 speedBox.Font = Enum.Font.GothamBold
-speedBox.TextSize = 11
+speedBox.TextSize = 18
 speedBox.PlaceholderText = "50"
 speedBox.Text = tostring(state.speedValue)
 speedBox.ClearTextOnFocus = false
@@ -278,7 +274,7 @@ versionLabel.BackgroundTransparency = 1
 versionLabel.TextColor3 = COLORS.TEXT_SECONDARY
 versionLabel.Font = Enum.Font.Gotham
 versionLabel.TextSize = 11
-versionLabel.Text = "v1.0 Basic | Pressione F1 para minimizar"
+versionLabel.Text = "v2.0 Ultra-Leve | Pressione F1 para minimizar"
 versionLabel.TextXAlignment = Enum.TextXAlignment.Center
 
 -- ===== DRAG FUNCTIONALITY =====
@@ -333,9 +329,9 @@ minimizeButton.MouseButton1Click:Connect(function()
 	frame.Visible = false
 end)
 
--- =====AUTOFARM ULTRA-LEVE=====
+-- ===== AUTOFARM ULTRA-LEVE (CORRIGIDO) =====
 
--- Busca NPCs válidos (otimizado)
+-- Busca NPCs válidos
 local function updateNPCCache()
 	table.clear(state.npcCache)
 	
@@ -346,8 +342,8 @@ local function updateNPCCache()
 	if not root then return end
 	
 	local rootPos = root.Position
-	local maxDistSq = CONFIG.MAX_DISTANCE * CONFIG.MAX_DISTANCE
 	
+	-- Busca em todo o Workspace (mais abrangente)
 	for _, descendant in ipairs(workspace:GetDescendants()) do
 		if descendant:IsA("Model") and descendant ~= character then
 			local humanoid = descendant:FindFirstChild("Humanoid")
@@ -356,19 +352,20 @@ local function updateNPCCache()
 			if humanoid and npcRoot and humanoid.Health > 0 and
 			   not Players:GetPlayerFromCharacter(descendant) then
 				
-				local distSq = (rootPos - npcRoot.Position).MagnitudeSquared
-				if distSq <= maxDistSq then
+				local distance = (rootPos - npcRoot.Position).Magnitude
+				if distance <= CONFIG.MAX_DISTANCE then
 					table.insert(state.npcCache, {
 						model = descendant,
 						root = npcRoot,
 						humanoid = humanoid,
-						distance = math.sqrt(distSq)
+						distance = distance
 					})
 				end
 			end
 		end
 	end
 	
+	-- Ordena por distância
 	table.sort(state.npcCache, function(a, b)
 		return a.distance < b.distance
 	end)
@@ -392,7 +389,7 @@ local function findClosestNPC()
 	return nil
 end
 
--- Valida NPC (otimizado)
+-- Valida NPC
 local function isNPCValid(npc)
 	if not npc or not npc.Parent then return false end
 	
@@ -407,8 +404,8 @@ local function isNPCValid(npc)
 	
 	if not root or not npcRoot then return false end
 	
-	local distSq = (root.Position - npcRoot.Position).MagnitudeSquared
-	return distSq <= (CONFIG.MAX_DISTANCE * CONFIG.MAX_DISTANCE)
+	local distance = (root.Position - npcRoot.Position).Magnitude
+	return distance <= CONFIG.MAX_DISTANCE
 end
 
 -- Loop principal do autofarm
@@ -478,78 +475,6 @@ autofarmBtn.MouseButton1Click:Connect(function()
 	end
 end)
 
--- ===== KILL AURA ULTRA-OTIMIZADO =====
-local KILL_AURA_RANGE = 3
-local KILL_AURA_DELAY = 0.15
-local KILL_AURA_RANGE_SQ = KILL_AURA_RANGE * KILL_AURA_RANGE
-
-local function killAuraLoop()
-	if not state.killAuraEnabled then return end
-	
-	local char = player.Character
-	if not char then return end
-	
-	local root = char:FindFirstChild("HumanoidRootPart")
-	if not root then return end
-	
-	local rootPos = root.Position
-	local currentTime = tick()
-	
-	for _, descendant in ipairs(workspace:GetDescendants()) do
-		if descendant:IsA("Model") and descendant ~= char then
-			local humanoid = descendant:FindFirstChild("Humanoid")
-			local npcRoot = descendant:FindFirstChild("HumanoidRootPart")
-			
-			if humanoid and npcRoot and humanoid.Health > 0 and
-			   not Players:GetPlayerFromCharacter(descendant) then
-				
-				local distSq = (rootPos - npcRoot.Position).MagnitudeSquared
-				if distSq <= KILL_AURA_RANGE_SQ then
-					local targetId = tostring(descendant)
-					local lastHit = state.lastHitTime[targetId]
-					
-					if not lastHit or (currentTime - lastHit) >= KILL_AURA_DELAY then
-						state.lastHitTime[targetId] = currentTime
-						pcall(function()
-							humanoid:TakeDamage(1)
-						end)
-					end
-				end
-			end
-		end
-	end
-	
-	-- Limpa cache de hits antigos (otimizado - apenas a cada 5 segundos)
-	if currentTime - state.lastCacheCleanup >= 5 then
-		state.lastCacheCleanup = currentTime
-		for targetId, hitTime in pairs(state.lastHitTime) do
-			if currentTime - hitTime > 1 then
-				state.lastHitTime[targetId] = nil
-			end
-		end
-	end
-end
-
-killAuraBtn.MouseButton1Click:Connect(function()
-	state.killAuraEnabled = not state.killAuraEnabled
-	
-	if state.killAuraEnabled then
-		disconnectConnection("killAura")
-		table.clear(state.lastHitTime)
-		
-		state.connections.killAura = RunService.Heartbeat:Connect(killAuraLoop)
-		
-		killAuraBtn.Text = "⚔️ Kill Aura: ON"
-		killAuraBtn.BackgroundColor3 = COLORS.BTN_ON
-	else
-		disconnectConnection("killAura")
-		table.clear(state.lastHitTime)
-		
-		killAuraBtn.Text = "⚔️ Kill Aura: OFF"
-		killAuraBtn.BackgroundColor3 = COLORS.BTN_OFF
-	end
-end)
-
 -- ===== INFINITE JUMP =====
 jumpBtn.MouseButton1Click:Connect(function()
 	state.infiniteJumpEnabled = not state.infiniteJumpEnabled
@@ -575,7 +500,7 @@ UserInputService.JumpRequest:Connect(function()
 	end
 end)
 
--- ===== VELOCITY SPEED (otimizado) =====
+-- ===== VELOCITY SPEED =====
 local function velocitySpeedLoop()
 	if not state.speedEnabled then return end
 
@@ -587,8 +512,7 @@ local function velocitySpeedLoop()
 
 	if root and hum then
 		local moveDir = hum.MoveDirection
-		local moveMagSq = moveDir.MagnitudeSquared
-		if moveMagSq > 0 then
+		if moveDir.Magnitude > 0 then
 			local currentY = root.AssemblyLinearVelocity.Y
 			root.AssemblyLinearVelocity = (moveDir.Unit * state.speedValue) + 
 			                               Vector3_new(0, currentY, 0)
@@ -650,7 +574,6 @@ screenGui.Destroying:Connect(function()
 		disconnectConnection(name)
 	end
 	table.clear(state.npcCache)
-	table.clear(state.lastHitTime)
 end)
 
 player.CharacterAdded:Connect(function()
@@ -659,4 +582,3 @@ player.CharacterAdded:Connect(function()
 		startVelocitySpeed()
 	end
 end)
-
