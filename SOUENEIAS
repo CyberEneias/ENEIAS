@@ -329,151 +329,116 @@ minimizeButton.MouseButton1Click:Connect(function()
 	frame.Visible = false
 end)
 
--- ===== AUTOFARM ULTRA-LEVE (CORRIGIDO) =====
+-- ===== AUTOFARM ULTRA-LEVE (OTIMIZADO) =====
 
--- Busca NPCs válidos
-local function updateNPCCache()
-	table.clear(state.npcCache)
-	
+local autofarmThread
+local npcScanThread
+
+-- Busca o NPC mais próximo (SEM GetDescendants frequente)
+local function findNearestNPC()
 	local character = player.Character
-	if not character then return end
-	
+	if not character then return nil end
+
 	local root = character:FindFirstChild("HumanoidRootPart")
-	if not root then return end
-	
-	local rootPos = root.Position
-	
-	-- Busca em todo o Workspace (mais abrangente)
-	for _, descendant in ipairs(workspace:GetDescendants()) do
-		if descendant:IsA("Model") and descendant ~= character then
-			local humanoid = descendant:FindFirstChild("Humanoid")
-			local npcRoot = descendant:FindFirstChild("HumanoidRootPart")
-			
-			if humanoid and npcRoot and humanoid.Health > 0 and
-			   not Players:GetPlayerFromCharacter(descendant) then
-				
-				local distance = (rootPos - npcRoot.Position).Magnitude
-				if distance <= CONFIG.MAX_DISTANCE then
-					table.insert(state.npcCache, {
-						model = descendant,
-						root = npcRoot,
-						humanoid = humanoid,
-						distance = distance
-					})
+	if not root then return nil end
+
+	local closestNPC
+	local closestDistance = CONFIG.MAX_DISTANCE
+
+	for _, model in ipairs(workspace:GetChildren()) do
+		if model:IsA("Model") and model ~= character then
+			local hum = model:FindFirstChild("Humanoid")
+			local npcRoot = model:FindFirstChild("HumanoidRootPart")
+
+			if hum and npcRoot and hum.Health > 0 and
+			   not Players:GetPlayerFromCharacter(model) then
+
+				local dist = (root.Position - npcRoot.Position).Magnitude
+				if dist < closestDistance then
+					closestDistance = dist
+					closestNPC = model
 				end
 			end
 		end
 	end
-	
-	-- Ordena por distância
-	table.sort(state.npcCache, function(a, b)
-		return a.distance < b.distance
+
+	return closestNPC
+end
+
+-- Thread de scan (roda DEVAGAR)
+local function startNPCScanner()
+	if npcScanThread then return end
+
+	npcScanThread = task.spawn(function()
+		while state.autofarmEnabled do
+			if not isNPCValid(state.lockedNPC) then
+				state.lockedNPC = findNearestNPC()
+			end
+			task.wait(2) -- 🔥 MUITO IMPORTANTE
+		end
+		npcScanThread = nil
 	end)
 end
 
--- Encontra o NPC mais próximo
-local function findClosestNPC()
-	local currentTime = tick()
-	if currentTime - state.lastNPCScan >= CONFIG.NPC_SCAN_INTERVAL then
-		updateNPCCache()
-		state.lastNPCScan = currentTime
-	end
-	
-	for _, npcData in ipairs(state.npcCache) do
-		local model = npcData.model
-		if model and model.Parent and npcData.humanoid.Health > 0 then
-			return model
+-- Loop principal do autofarm (leve)
+local function startAutofarmLoop()
+	if autofarmThread then return end
+
+	autofarmThread = task.spawn(function()
+		while state.autofarmEnabled do
+			local character = player.Character
+			local npc = state.lockedNPC
+
+			if character and npc then
+				local root = character:FindFirstChild("HumanoidRootPart")
+				local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+
+				if root and npcRoot then
+					local npcCF = npcRoot.CFrame
+					local targetPos =
+						npcRoot.Position
+						- npcCF.LookVector * CONFIG.BACK_DISTANCE
+						+ Vector3.new(0, CONFIG.HEIGHT_OFFSET, 0)
+
+					-- Anti-knockback LEVE
+					if root.AssemblyLinearVelocity.Magnitude > 25 then
+						root.AssemblyLinearVelocity = Vector3.zero
+					end
+
+					root.CFrame = CFrame.new(targetPos)
+					statusLabel.Text = "🎯 NPC: " .. npc.Name
+				end
+			else
+				statusLabel.Text = "🎯 NPC: Procurando..."
+			end
+
+			task.wait(0.1) -- 🔥 10x por segundo (suave)
 		end
-	end
-	
-	return nil
+
+		autofarmThread = nil
+	end)
 end
 
--- Valida NPC
-local function isNPCValid(npc)
-	if not npc or not npc.Parent then return false end
-	
-	local humanoid = npc:FindFirstChild("Humanoid")
-	if not humanoid or humanoid.Health <= 0 then return false end
-	
-	local character = player.Character
-	if not character then return false end
-	
-	local root = character:FindFirstChild("HumanoidRootPart")
-	local npcRoot = npc:FindFirstChild("HumanoidRootPart")
-	
-	if not root or not npcRoot then return false end
-	
-	local distance = (root.Position - npcRoot.Position).Magnitude
-	return distance <= CONFIG.MAX_DISTANCE
-end
-
--- Loop principal do autofarm
-local function autofarmLoop()
-	if not state.autofarmEnabled then return end
-	
-	local character = player.Character
-	if not character then return end
-	
-	local root = character:FindFirstChild("HumanoidRootPart")
-	if not root then return end
-
-	-- Busca ou valida NPC
-	if not isNPCValid(state.lockedNPC) then
-		state.lockedNPC = findClosestNPC()
-	end
-
-	local npc = state.lockedNPC
-	if not npc then
-		statusLabel.Text = "🎯 NPC: Procurando..."
-		return
-	end
-
-	local npcRoot = npc:FindFirstChild("HumanoidRootPart")
-	if not npcRoot then
-		state.lockedNPC = nil
-		return
-	end
-
-	-- Calcula posição fixa atrás do NPC
-	local npcCFrame = npcRoot.CFrame
-	local backVector = -npcCFrame.LookVector * CONFIG.BACK_DISTANCE
-	local upVector = Vector3_new(0, CONFIG.HEIGHT_OFFSET, 0)
-	local targetCFrame = CFrame_new(npcRoot.Position + backVector + upVector)
-
-	-- Anti-knockback
-	root.AssemblyLinearVelocity = Vector3_zero
-	root.AssemblyAngularVelocity = Vector3_zero
-	
-	-- Teleporta
-	root.CFrame = targetCFrame
-	
-	-- Atualiza status
-	statusLabel.Text = "🎯 NPC: " .. npc.Name
-end
-
+-- Botão Autofarm
 autofarmBtn.MouseButton1Click:Connect(function()
 	state.autofarmEnabled = not state.autofarmEnabled
-	
+
 	if state.autofarmEnabled then
-		disconnectConnection("autofarm")
-		state.lastNPCScan = 0
-		table.clear(state.npcCache)
-		
-		state.connections.autofarm = RunService.Heartbeat:Connect(autofarmLoop)
-		
+		state.lockedNPC = nil
+		startNPCScanner()
+		startAutofarmLoop()
+
 		autofarmBtn.Text = "🤖 Autofarm: ON"
 		autofarmBtn.BackgroundColor3 = COLORS.BTN_ON
 	else
-		disconnectConnection("autofarm")
 		state.lockedNPC = nil
-		table.clear(state.npcCache)
-		
+
 		autofarmBtn.Text = "🤖 Autofarm: OFF"
 		autofarmBtn.BackgroundColor3 = COLORS.BTN_OFF
 		statusLabel.Text = "🎯 NPC: Nenhum"
 	end
 end)
+
 
 -- ===== INFINITE JUMP =====
 jumpBtn.MouseButton1Click:Connect(function()
