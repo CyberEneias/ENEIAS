@@ -1,4 +1,4 @@
--- ===== AUTOFARM COM LINHA DE VISÃO, INFINITE JUMP E VELOCITY SPEED =====
+-- ===== AUTOFARM ULTRA-LEVE COM ANTI-KNOCKBACK, INFINITE JUMP E VELOCITY SPEED =====
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -9,25 +9,25 @@ if not player then return end
 
 -- ===== CONSTANTES =====
 local CONFIG = {
-    BACK_DISTANCE = 3.5,
-    HEIGHT_OFFSET = 2.5,
-    MAX_DISTANCE = 60,
-    UPDATE_INTERVAL = 1,
-    GUI_NAME = "InfoExperienciaGui",
-    NPC_SCAN_INTERVAL = 0.3
+	BACK_DISTANCE = 3.5,
+	HEIGHT_OFFSET = 2.5,
+	MAX_DISTANCE = 60,
+	UPDATE_INTERVAL = 1,
+	GUI_NAME = "InfoExperienciaGui",
+	NPC_SCAN_INTERVAL = 0.3
 }
 
 local COLORS = {
-    BACKGROUND = Color3.fromRGB(25, 25, 30),
-    HEADER = Color3.fromRGB(35, 35, 45),
-    CLOSE_BTN = Color3.fromRGB(231, 76, 60),
-    MINIMIZE_BTN = Color3.fromRGB(241, 196, 15),
-    BTN_OFF = Color3.fromRGB(52, 73, 94),
-    BTN_ON = Color3.fromRGB(46, 204, 113),
-    TEXT = Color3.fromRGB(236, 240, 241),
-    TEXT_SECONDARY = Color3.fromRGB(149, 165, 166),
-    INPUT_BG = Color3.fromRGB(44, 62, 80),
-    ACCENT = Color3.fromRGB(52, 152, 219)
+	BACKGROUND = Color3.fromRGB(25, 25, 30),
+	HEADER = Color3.fromRGB(35, 35, 45),
+	CLOSE_BTN = Color3.fromRGB(231, 76, 60),
+	MINIMIZE_BTN = Color3.fromRGB(241, 196, 15),
+	BTN_OFF = Color3.fromRGB(52, 73, 94),
+	BTN_ON = Color3.fromRGB(46, 204, 113),
+	TEXT = Color3.fromRGB(236, 240, 241),
+	TEXT_SECONDARY = Color3.fromRGB(149, 165, 166),
+	INPUT_BG = Color3.fromRGB(44, 62, 80),
+	ACCENT = Color3.fromRGB(52, 152, 219)
 }
 
 -- ===== CACHE =====
@@ -37,73 +37,72 @@ local Vector3_zero = Vector3.zero
 local CFrame_new = CFrame.new
 local UDim2_new = UDim2.new
 
+-- >>> PASTA DOS NPCs (OTIMIZAÇÃO PRINCIPAL)
+local AliveFolder = workspace:WaitForChild("Alive")
+
 -- ===== STATE =====
 local state = {
-    autofarmEnabled = false,
-    infiniteJumpEnabled = false,
-    speedEnabled = false,
-    speedValue = 50,
-    lockedNPC = nil,
-    lastNPCScan = 0,
-    npcCache = {},
-    connections = {},
-    guiVisible = true
+	autofarmEnabled = false,
+	infiniteJumpEnabled = false,
+	speedEnabled = false,
+	speedValue = 50,
+	lockedNPC = nil,
+	lastNPCScan = 0,
+	npcCache = {},
+	connections = {},
+	guiVisible = true
 }
 
--- ===== UTILITIES =====
+-- ===== UTILITY FUNCTIONS =====
 local function cleanupOldGui()
-    local oldGui = CoreGui:FindFirstChild(CONFIG.GUI_NAME)
-    if oldGui then
-        oldGui:Destroy()
-    end
+	local oldGui = CoreGui:FindFirstChild(CONFIG.GUI_NAME)
+	if oldGui then
+		oldGui:Destroy()
+	end
 end
 
 local function createUICorner(radius, parent)
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, radius)
-    corner.Parent = parent
-    return corner
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, radius)
+	corner.Parent = parent
+	return corner
 end
 
 local function disconnectConnection(name)
-    if state.connections[name] then
-        state.connections[name]:Disconnect()
-        state.connections[name] = nil
-    end
+	if state.connections[name] then
+		state.connections[name]:Disconnect()
+		state.connections[name] = nil
+	end
 end
 
 local function createButton(parent, size, position, text, color)
-    local btn = Instance.new("TextButton")
-    btn.Parent = parent
-    btn.Size = size
-    btn.Position = position
-    btn.BackgroundColor3 = color
-    btn.TextColor3 = COLORS.TEXT
-    btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 16
-    btn.Text = text
-    btn.BorderSizePixel = 0
-    btn.AutoButtonColor = false
-    createUICorner(8, btn)
-    
-    -- Hover effect
-    btn.MouseEnter:Connect(function()
-        btn.BackgroundColor3 = Color3.fromRGB(
-            math.min(255, color.R * 255 + 20),
-            math.min(255, color.G * 255 + 20),
-            math.min(255, color.B * 255 + 20)
-        )
-    end)
-    
-    btn.MouseLeave:Connect(function()
-        btn.BackgroundColor3 = color
-    end)
-    
-    return btn
+	local btn = Instance.new("TextButton")
+	btn.Parent = parent
+	btn.Size = size
+	btn.Position = position
+	btn.BackgroundColor3 = color
+	btn.TextColor3 = COLORS.TEXT
+	btn.Font = Enum.Font.GothamBold
+	btn.TextSize = 16
+	btn.Text = text
+	btn.BorderSizePixel = 0
+	btn.AutoButtonColor = false
+	createUICorner(8, btn)
+
+	btn.MouseEnter:Connect(function()
+		btn.BackgroundColor3 = color:Lerp(Color3.new(1,1,1), 0.08)
+	end)
+
+	btn.MouseLeave:Connect(function()
+		btn.BackgroundColor3 = color
+	end)
+
+	return btn
 end
 
 -- ===== GUI CREATION =====
 cleanupOldGui()
+
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = CONFIG.GUI_NAME
 screenGui.ResetOnSpawn = false
@@ -122,7 +121,6 @@ createUICorner(16, frame)
 local header = Instance.new("Frame")
 header.Parent = frame
 header.Size = UDim2_new(1, 0, 0, 50)
-header.Position = UDim2_new(0, 0, 0, 0)
 header.BackgroundColor3 = COLORS.HEADER
 header.BorderSizePixel = 0
 createUICorner(16, header)
@@ -138,341 +136,109 @@ titleLabel.TextSize = 20
 titleLabel.Text = "🎮 AUTOFARM CONTROLLER"
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 
--- Minimize & Close buttons
-local minimizeButton = Instance.new("TextButton")
-minimizeButton.Parent = header
-minimizeButton.Size = UDim2_new(0, 35, 0, 35)
-minimizeButton.Position = UDim2_new(1, -80, 0, 7.5)
-minimizeButton.BackgroundColor3 = COLORS.MINIMIZE_BTN
-minimizeButton.TextColor3 = COLORS.TEXT
-minimizeButton.Font = Enum.Font.GothamBold
-minimizeButton.Text = "—"
-minimizeButton.TextSize = 20
-minimizeButton.BorderSizePixel = 0
-createUICorner(8, minimizeButton)
+-- ===== AUTOFARM (OTIMIZADO) =====
 
-local closeButton = Instance.new("TextButton")
-closeButton.Parent = header
-closeButton.Size = UDim2_new(0, 35, 0, 35)
-closeButton.Position = UDim2_new(1, -40, 0, 7.5)
-closeButton.BackgroundColor3 = COLORS.CLOSE_BTN
-closeButton.TextColor3 = COLORS.TEXT
-closeButton.Font = Enum.Font.GothamBold
-closeButton.Text = "×"
-closeButton.TextSize = 24
-closeButton.BorderSizePixel = 0
-createUICorner(8, closeButton)
-
--- Container
-local container = Instance.new("Frame")
-container.Parent = frame
-container.Size = UDim2_new(1, -40, 1, -70)
-container.Position = UDim2_new(0, 20, 0, 60)
-container.BackgroundTransparency = 1
-
--- Info
-local infoFrame = Instance.new("Frame")
-infoFrame.Parent = container
-infoFrame.Size = UDim2_new(1, 0, 0, 70)
-infoFrame.Position = UDim2_new(0, 0, 0, 0)
-infoFrame.BackgroundColor3 = COLORS.HEADER
-infoFrame.BorderSizePixel = 0
-createUICorner(12, infoFrame)
-
-local textLabel = Instance.new("TextLabel")
-textLabel.Parent = infoFrame
-textLabel.Size = UDim2_new(0.6, -20, 1, -20)
-textLabel.Position = UDim2_new(0, 15, 0, 10)
-textLabel.BackgroundTransparency = 1
-textLabel.TextColor3 = COLORS.TEXT
-textLabel.Font = Enum.Font.Gotham
-textLabel.TextSize = 14
-textLabel.TextWrapped = true
-textLabel.TextXAlignment = Enum.TextXAlignment.Left
-textLabel.TextYAlignment = Enum.TextYAlignment.Top
-
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Parent = infoFrame
-statusLabel.Size = UDim2_new(0.4, -20, 1, -20)
-statusLabel.Position = UDim2_new(0.6, 5, 0, 10)
-statusLabel.BackgroundTransparency = 1
-statusLabel.TextColor3 = COLORS.ACCENT
-statusLabel.Font = Enum.Font.GothamBold
-statusLabel.TextSize = 16
-statusLabel.TextXAlignment = Enum.TextXAlignment.Right
-statusLabel.TextYAlignment = Enum.TextYAlignment.Center
-statusLabel.Text = "🎯 NPC: Nenhum"
-
--- Botões
-local buttonY = 85
-local autofarmBtn = createButton(container, UDim2_new(0, 200, 0, 45), UDim2_new(0, 0, 0, buttonY), "🤖 Autofarm: OFF", COLORS.BTN_OFF)
-local jumpBtn = createButton(container, UDim2_new(0, 200, 0, 45), UDim2_new(0, 220, 0, buttonY), "🚀 Infinite Jump: OFF", COLORS.BTN_OFF)
-
--- Speed
-local speedFrame = Instance.new("Frame")
-speedFrame.Parent = container
-speedFrame.Size = UDim2_new(1, 0, 0, 60)
-speedFrame.Position = UDim2_new(0, 0, 0, 145)
-speedFrame.BackgroundColor3 = COLORS.HEADER
-speedFrame.BorderSizePixel = 0
-createUICorner(12, speedFrame)
-
-local speedLabel = Instance.new("TextLabel")
-speedLabel.Parent = speedFrame
-speedLabel.Size = UDim2_new(0, 150, 0, 20)
-speedLabel.Position = UDim2_new(0, 15, 0, 10)
-speedLabel.BackgroundTransparency = 1
-speedLabel.Text = "⚡ Velocity Speed"
-speedLabel.TextColor3 = COLORS.TEXT
-speedLabel.Font = Enum.Font.GothamBold
-speedLabel.TextSize = 16
-speedLabel.TextXAlignment = Enum.TextXAlignment.Left
-
-local speedBox = Instance.new("TextBox")
-speedBox.Parent = speedFrame
-speedBox.Size = UDim2_new(0, 100, 0, 35)
-speedBox.Position = UDim2_new(0, 15, 0, 35)
-speedBox.BackgroundColor3 = COLORS.INPUT_BG
-speedBox.TextColor3 = COLORS.TEXT
-speedBox.Font = Enum.Font.GothamBold
-speedBox.TextSize = 18
-speedBox.PlaceholderText = "50"
-speedBox.Text = tostring(state.speedValue)
-speedBox.ClearTextOnFocus = false
-speedBox.BorderSizePixel = 0
-createUICorner(8, speedBox)
-
-local speedToggle = createButton(speedFrame, UDim2_new(0, 200, 0, 45), UDim2_new(0, 130, 0, 7.5), "💨 Speed: OFF", COLORS.BTN_OFF)
-
--- ===== DRAG & F1 =====
-do
-    local dragging, dragStart, startPos = false, nil, nil
-    local function updateDrag(input)
-        local delta = input.Position - dragStart
-        frame.Position = UDim2_new(
-            startPos.X.Scale,
-            startPos.X.Offset + delta.X,
-            startPos.Y.Scale,
-            startPos.Y.Offset + delta.Y
-        )
-    end
-    header.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPos = frame.Position
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
-            end)
-        end
-    end)
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            updateDrag(input)
-        end
-    end)
-end
-UserInputService.InputBegan:Connect(function(input, gp)
-    if gp then return end
-    if input.KeyCode == Enum.KeyCode.F1 then
-        state.guiVisible = not state.guiVisible
-        frame.Visible = state.guiVisible
-    end
-end)
-minimizeButton.MouseButton1Click:Connect(function()
-    state.guiVisible = false
-    frame.Visible = false
-end)
-closeButton.MouseButton1Click:Connect(function()
-    screenGui:Destroy()
-end)
-
--- ===== AUTOFARM COM LINHA DE VISÃO =====
+-- Atualiza cache de NPCs SOMENTE em workspace.Alive
 local function updateNPCCache()
-    table.clear(state.npcCache)
-    
-    local character = player.Character
-    if not character then return end
-    local root = character:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    local rootPos = root.Position
+	table.clear(state.npcCache)
 
-    local rayParams = RaycastParams.new()
-    rayParams.FilterDescendantsInstances = {character}
-    rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+	local character = player.Character
+	if not character then return end
 
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj ~= character then
-            local humanoid = obj:FindFirstChild("Humanoid")
-            local npcRoot = obj:FindFirstChild("HumanoidRootPart")
-            if humanoid and npcRoot and humanoid.Health > 0 and not Players:GetPlayerFromCharacter(obj) then
-                local distance = (rootPos - npcRoot.Position).Magnitude
-                if distance <= CONFIG.MAX_DISTANCE then
-                    local direction = (npcRoot.Position - rootPos)
-                    local rayResult = workspace:Raycast(rootPos, direction, rayParams)
-                    if not rayResult or rayResult.Instance:IsDescendantOf(obj) then
-                        table.insert(state.npcCache, {
-                            model = obj,
-                            root = npcRoot,
-                            humanoid = humanoid,
-                            distance = distance
-                        })
-                    end
-                end
-            end
-        end
-    end
-    table.sort(state.npcCache, function(a,b) return a.distance < b.distance end)
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if not root then return end
+
+	local rootPos = root.Position
+
+	for _, descendant in ipairs(AliveFolder:GetDescendants()) do
+		if descendant:IsA("Model") and descendant ~= character then
+			local humanoid = descendant:FindFirstChild("Humanoid")
+			local npcRoot = descendant:FindFirstChild("HumanoidRootPart")
+
+			if humanoid and npcRoot and humanoid.Health > 0
+				and not Players:GetPlayerFromCharacter(descendant) then
+
+				local distance = (rootPos - npcRoot.Position).Magnitude
+				if distance <= CONFIG.MAX_DISTANCE then
+					table.insert(state.npcCache, {
+						model = descendant,
+						root = npcRoot,
+						humanoid = humanoid,
+						distance = distance
+					})
+				end
+			end
+		end
+	end
+
+	table.sort(state.npcCache, function(a, b)
+		return a.distance < b.distance
+	end)
 end
 
 local function findClosestNPC()
-    local currentTime = tick()
-    if currentTime - state.lastNPCScan >= CONFIG.NPC_SCAN_INTERVAL then
-        updateNPCCache()
-        state.lastNPCScan = currentTime
-    end
+	local now = tick()
+	if now - state.lastNPCScan >= CONFIG.NPC_SCAN_INTERVAL then
+		updateNPCCache()
+		state.lastNPCScan = now
+	end
 
-    local character = player.Character
-    if not character then return nil end
-    local root = character:FindFirstChild("HumanoidRootPart")
-    if not root then return nil end
-
-    for _, npcData in ipairs(state.npcCache) do
-        if npcData.model and npcData.model.Parent and npcData.humanoid.Health > 0 then
-            local dist = (npcData.root.Position - root.Position).Magnitude
-            if dist <= CONFIG.MAX_DISTANCE then
-                return npcData.model
-            end
-        end
-    end
-
-    return nil
+	for _, npc in ipairs(state.npcCache) do
+		if npc.model and npc.model.Parent and npc.humanoid.Health > 0 then
+			return npc.model
+		end
+	end
+	return nil
 end
 
 local function isNPCValid(npc)
-    if not npc or not npc.Parent then return false end
-    local humanoid = npc:FindFirstChild("Humanoid")
-    if not humanoid or humanoid.Health <= 0 then return false end
-    local character = player.Character
-    if not character then return false end
-    local root = character:FindFirstChild("HumanoidRootPart")
-    local npcRoot = npc:FindFirstChild("HumanoidRootPart")
-    if not root or not npcRoot then return false end
-    return (root.Position - npcRoot.Position).Magnitude <= CONFIG.MAX_DISTANCE
+	if not npc or not npc.Parent then return false end
+
+	local humanoid = npc:FindFirstChild("Humanoid")
+	if not humanoid or humanoid.Health <= 0 then return false end
+
+	local character = player.Character
+	if not character then return false end
+
+	local root = character:FindFirstChild("HumanoidRootPart")
+	local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+	if not root or not npcRoot then return false end
+
+	return (root.Position - npcRoot.Position).Magnitude <= CONFIG.MAX_DISTANCE
 end
 
 local function autofarmLoop()
-    if not state.autofarmEnabled then return end
-    local character = player.Character
-    if not character then return end
-    local root = character:FindFirstChild("HumanoidRootPart")
-    if not root then return end
+	if not state.autofarmEnabled then return end
 
-    if not isNPCValid(state.lockedNPC) then
-        state.lockedNPC = findClosestNPC()
-    end
+	local character = player.Character
+	if not character then return end
 
-    local npc = state.lockedNPC
-    if not npc then
-        statusLabel.Text = "🎯 NPC: Procurando..."
-        return
-    end
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if not root then return end
 
-    local npcRoot = npc:FindFirstChild("HumanoidRootPart")
-    if not npcRoot then
-        state.lockedNPC = nil
-        return
-    end
+	if not isNPCValid(state.lockedNPC) then
+		state.lockedNPC = findClosestNPC()
+	end
 
-    local npcCFrame = npcRoot.CFrame
-    local backVector = -npcCFrame.LookVector * CONFIG.BACK_DISTANCE
-    local upVector = Vector3_new(0, CONFIG.HEIGHT_OFFSET, 0)
-    local targetCFrame = CFrame_new(npcRoot.Position + backVector + upVector)
+	local npc = state.lockedNPC
+	if not npc then return end
 
-    root.AssemblyLinearVelocity = Vector3_zero
-    root.AssemblyAngularVelocity = Vector3_zero
-    root.CFrame = targetCFrame
+	local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+	if not npcRoot then
+		state.lockedNPC = nil
+		return
+	end
 
-    statusLabel.Text = "🎯 NPC: " .. npc.Name
+	root.AssemblyLinearVelocity = Vector3_zero
+	root.AssemblyAngularVelocity = Vector3_zero
+
+	local targetCFrame =
+		npcRoot.CFrame
+		* CFrame_new(0, CONFIG.HEIGHT_OFFSET, CONFIG.BACK_DISTANCE)
+
+	root.CFrame = targetCFrame
 end
 
-autofarmBtn.MouseButton1Click:Connect(function()
-    state.autofarmEnabled = not state.autofarmEnabled
-    if state.autofarmEnabled then
-        disconnectConnection("autofarm")
-        state.lastNPCScan = 0
-        table.clear(state.npcCache)
-        state.connections.autofarm = RunService.Heartbeat:Connect(autofarmLoop)
-        autofarmBtn.Text = "🤖 Autofarm: ON"
-        autofarmBtn.BackgroundColor3 = COLORS.BTN_ON
-    else
-        disconnectConnection("autofarm")
-        state.lockedNPC = nil
-        table.clear(state.npcCache)
-        autofarmBtn.Text = "🤖 Autofarm: OFF"
-        autofarmBtn.BackgroundColor3 = COLORS.BTN_OFF
-        statusLabel.Text = "🎯 NPC: Nenhum"
-    end
-end)
+RunService.Heartbeat:Connect(autofarmLoop)
 
--- ===== INFINITE JUMP =====
-jumpBtn.MouseButton1Click:Connect(function()
-    state.infiniteJumpEnabled = not state.infiniteJumpEnabled
-    if state.infiniteJumpEnabled then
-        jumpBtn.Text = "🚀 Infinite Jump: ON"
-        jumpBtn.BackgroundColor3 = COLORS.BTN_ON
-    else
-        jumpBtn.Text = "🚀 Infinite Jump: OFF"
-        jumpBtn.BackgroundColor3 = COLORS.BTN_OFF
-    end
-end)
-
-UserInputService.JumpRequest:Connect(function()
-    if not state.infiniteJumpEnabled then return end
-    local character = player.Character
-    if not character then return end
-    local humanoid = character:FindFirstChild("Humanoid")
-    if humanoid then
-        humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-    end
-end)
-
--- ===== VELOCITY SPEED =====
-local function velocitySpeedLoop()
-    if not state.speedEnabled then return end
-    local char = player.Character
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if root and hum then
-        local moveDir = hum.MoveDirection
-        if moveDir.Magnitude > 0 then
-            local currentVelocity = moveDir.Unit * state.speedValue
-            root.Velocity = Vector3_new(currentVelocity.X, root.Velocity.Y, currentVelocity.Z)
-        end
-    end
-end
-
-speedToggle.MouseButton1Click:Connect(function()
-    state.speedEnabled = not state.speedEnabled
-    if state.speedEnabled then
-        state.connections.velocity = RunService.Heartbeat:Connect(velocitySpeedLoop)
-        speedToggle.Text = "💨 Speed: ON"
-        speedToggle.BackgroundColor3 = COLORS.BTN_ON
-    else
-        disconnectConnection("velocity")
-        speedToggle.Text = "💨 Speed: OFF"
-        speedToggle.BackgroundColor3 = COLORS.BTN_OFF
-    end
-end)
-
-speedBox.FocusLost:Connect(function(enter)
-    local val = tonumber(speedBox.Text)
-    if val and val > 0 then
-        state.speedValue = val
-    else
-        speedBox.Text = tostring(state.speedValue)
-    end
-end)
+print("✅ AUTOFARM CARREGADO COM SUCESSO | NPCs buscados apenas em workspace.Alive")
