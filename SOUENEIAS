@@ -12,6 +12,8 @@ local CONFIG = {
 	BACK_DISTANCE = 3.0,
 	HEIGHT_OFFSET = 2.5,
 	MAX_DISTANCE = 10,
+	MAX_NPCS = 5,
+	KILL_AURA_DISTANCE = 3,
 	UPDATE_INTERVAL = 1,
 	GUI_NAME = "InfoExperienciaGui",
 	NPC_SCAN_INTERVAL = 0.10
@@ -43,6 +45,7 @@ local state = {
 	infiniteJumpEnabled = false,
 	speedEnabled = false,
 	speedValue = 50,
+	killAuraEnabled = false,
 	lockedNPC = nil,
 	lastNPCScan = 0,
 	npcCache = {},
@@ -228,6 +231,7 @@ statusLabel.Text = "🎯 NPC: Nenhum"
 local buttonY = 85
 local autofarmBtn = createButton(container, UDim2_new(0, 200, 0, 45), UDim2_new(0, 0, 0, buttonY), "🤖 Autofarm: OFF", COLORS.BTN_OFF)
 local jumpBtn = createButton(container, UDim2_new(0, 200, 0, 45), UDim2_new(0, 220, 0, buttonY), "🚀 Infinite Jump: OFF", COLORS.BTN_OFF)
+local killAuraBtn = createButton(container, UDim2_new(0, 200, 0, 45), UDim2_new(0, 440, 0, buttonY), "⚔️ Kill Aura: OFF", COLORS.BTN_OFF)
 
 -- Speed Section
 local speedFrame = Instance.new("Frame")
@@ -256,7 +260,7 @@ speedBox.Position = UDim2_new(0, 15, 0, 35)
 speedBox.BackgroundColor3 = COLORS.INPUT_BG
 speedBox.TextColor3 = COLORS.TEXT
 speedBox.Font = Enum.Font.GothamBold
-speedBox.TextSize = 11
+speedBox.TextSize = 15
 speedBox.PlaceholderText = "50"
 speedBox.Text = tostring(state.speedValue)
 speedBox.ClearTextOnFocus = false
@@ -369,6 +373,13 @@ local function updateNPCCache()
 	table.sort(state.npcCache, function(a, b)
 		return a.distance < b.distance
 	end)
+	
+	-- Limita a 5 NPCs máximo
+	if #state.npcCache > CONFIG.MAX_NPCS then
+		for i = CONFIG.MAX_NPCS + 1, #state.npcCache do
+			state.npcCache[i] = nil
+		end
+	end
 end
 
 -- Encontra o NPC mais próximo
@@ -548,6 +559,54 @@ speedBox.FocusLost:Connect(function()
 	local value = tonumber(speedBox.Text)
 	if value and value > 0 then
 		state.speedValue = value
+	end
+end)
+
+-- ===== KILL AURA =====
+local function killAuraLoop()
+	if not state.killAuraEnabled then return end
+	
+	local character = player.Character
+	if not character then return end
+	
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if not root then return end
+	
+	local rootPos = root.Position
+	
+	-- Busca NPCs dentro do raio de 3 studs
+	for _, descendant in ipairs(workspace:GetDescendants()) do
+		if descendant:IsA("Model") and descendant ~= character then
+			local humanoid = descendant:FindFirstChild("Humanoid")
+			local npcRoot = descendant:FindFirstChild("HumanoidRootPart")
+			
+			if humanoid and npcRoot and humanoid.Health > 0 and
+			   not Players:GetPlayerFromCharacter(descendant) then
+				
+				local distance = (rootPos - npcRoot.Position).Magnitude
+				if distance <= CONFIG.KILL_AURA_DISTANCE then
+					-- Mata o NPC
+					humanoid.Health = 0
+				end
+			end
+		end
+	end
+end
+
+killAuraBtn.MouseButton1Click:Connect(function()
+	state.killAuraEnabled = not state.killAuraEnabled
+	
+	if state.killAuraEnabled then
+		disconnectConnection("killAura")
+		state.connections.killAura = RunService.Heartbeat:Connect(killAuraLoop)
+		
+		killAuraBtn.Text = "⚔️ Kill Aura: ON"
+		killAuraBtn.BackgroundColor3 = COLORS.BTN_ON
+	else
+		disconnectConnection("killAura")
+		
+		killAuraBtn.Text = "⚔️ Kill Aura: OFF"
+		killAuraBtn.BackgroundColor3 = COLORS.BTN_OFF
 	end
 end)
 
