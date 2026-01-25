@@ -329,12 +329,35 @@ minimizeButton.MouseButton1Click:Connect(function()
 	frame.Visible = false
 end)
 
--- ===== AUTOFARM ULTRA-LEVE (OTIMIZADO) =====
+-- ===== AUTOFARM ULTRA-LEVE (WORKSPACE.ALIVE) =====
 
-local autofarmThread
-local npcScanThread
+local NPC_FOLDER = workspace:WaitForChild("alive")
 
--- Busca o NPC mais próximo (SEM GetDescendants frequente)
+local autofarmThread = nil
+local npcScanThread = nil
+
+-- Valida NPC
+local function isNPCValid(npc)
+	if not npc or not npc.Parent then return false end
+
+	local hum = npc:FindFirstChild("Humanoid")
+	if not hum or hum.Health <= 0 then return false end
+
+	local npcRoot =
+		npc:FindFirstChild("HumanoidRootPart")
+		or npc.PrimaryPart
+		or npc:FindFirstChild("Torso")
+
+	if not npcRoot then return false end
+
+	local char = player.Character
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	if not root then return false end
+
+	return (root.Position - npcRoot.Position).Magnitude <= CONFIG.MAX_DISTANCE
+end
+
+-- Encontra o NPC mais próximo dentro da pasta alive
 local function findNearestNPC()
 	local character = player.Character
 	if not character then return nil end
@@ -342,17 +365,18 @@ local function findNearestNPC()
 	local root = character:FindFirstChild("HumanoidRootPart")
 	if not root then return nil end
 
-	local closestNPC
+	local closestNPC = nil
 	local closestDistance = CONFIG.MAX_DISTANCE
 
-	for _, model in ipairs(workspace:GetChildren()) do
-		if model:IsA("Model") and model ~= character then
+	for _, model in ipairs(NPC_FOLDER:GetChildren()) do
+		if model:IsA("Model") then
 			local hum = model:FindFirstChild("Humanoid")
-			local npcRoot = model:FindFirstChild("HumanoidRootPart")
+			local npcRoot =
+				model:FindFirstChild("HumanoidRootPart")
+				or model.PrimaryPart
+				or model:FindFirstChild("Torso")
 
-			if hum and npcRoot and hum.Health > 0 and
-			   not Players:GetPlayerFromCharacter(model) then
-
+			if hum and npcRoot and hum.Health > 0 then
 				local dist = (root.Position - npcRoot.Position).Magnitude
 				if dist < closestDistance then
 					closestDistance = dist
@@ -365,7 +389,7 @@ local function findNearestNPC()
 	return closestNPC
 end
 
--- Thread de scan (roda DEVAGAR)
+-- Scanner de NPCs (roda devagar)
 local function startNPCScanner()
 	if npcScanThread then return end
 
@@ -374,13 +398,13 @@ local function startNPCScanner()
 			if not isNPCValid(state.lockedNPC) then
 				state.lockedNPC = findNearestNPC()
 			end
-			task.wait(2) -- 🔥 MUITO IMPORTANTE
+			task.wait(2) -- 🔥 scanner leve
 		end
 		npcScanThread = nil
 	end)
 end
 
--- Loop principal do autofarm (leve)
+-- Loop principal do autofarm (leve e estável)
 local function startAutofarmLoop()
 	if autofarmThread then return end
 
@@ -391,7 +415,10 @@ local function startAutofarmLoop()
 
 			if character and npc then
 				local root = character:FindFirstChild("HumanoidRootPart")
-				local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+				local npcRoot =
+					npc:FindFirstChild("HumanoidRootPart")
+					or npc.PrimaryPart
+					or npc:FindFirstChild("Torso")
 
 				if root and npcRoot then
 					local npcCF = npcRoot.CFrame
@@ -400,7 +427,7 @@ local function startAutofarmLoop()
 						- npcCF.LookVector * CONFIG.BACK_DISTANCE
 						+ Vector3.new(0, CONFIG.HEIGHT_OFFSET, 0)
 
-					-- Anti-knockback LEVE
+					-- Anti-knockback leve
 					if root.AssemblyLinearVelocity.Magnitude > 25 then
 						root.AssemblyLinearVelocity = Vector3.zero
 					end
@@ -412,7 +439,7 @@ local function startAutofarmLoop()
 				statusLabel.Text = "🎯 NPC: Procurando..."
 			end
 
-			task.wait(0.1) -- 🔥 10x por segundo (suave)
+			task.wait(0.1) -- 🔥 10x por segundo (sem lag)
 		end
 
 		autofarmThread = nil
@@ -425,6 +452,9 @@ autofarmBtn.MouseButton1Click:Connect(function()
 
 	if state.autofarmEnabled then
 		state.lockedNPC = nil
+		npcScanThread = nil
+		autofarmThread = nil
+
 		startNPCScanner()
 		startAutofarmLoop()
 
@@ -438,7 +468,6 @@ autofarmBtn.MouseButton1Click:Connect(function()
 		statusLabel.Text = "🎯 NPC: Nenhum"
 	end
 end)
-
 
 -- ===== INFINITE JUMP =====
 jumpBtn.MouseButton1Click:Connect(function()
