@@ -290,69 +290,110 @@ screenGui.Destroying:Connect(function()
 	end
 end)
 
--- ===== WALK SPEED CONFIG =====
-local desiredWalkSpeed = 16
+-- ===== VELOCITY BASED SPEED =====
+local speedEnabled = false
+local speedValue = 50
+local speedConnection
 
 -- Label
 local speedLabel = Instance.new("TextLabel")
 speedLabel.Parent = frame
-speedLabel.Size = UDim2.new(0, 140, 0, 20)
-speedLabel.Position = UDim2.new(0, 190, 1, -85)
+speedLabel.Size = UDim2.new(0, 160, 0, 20)
+speedLabel.Position = UDim2.new(0, 190, 1, -90)
 speedLabel.BackgroundTransparency = 1
-speedLabel.Text = "WalkSpeed:"
+speedLabel.Text = "Velocity Speed:"
 speedLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 speedLabel.Font = Enum.Font.SourceSans
 speedLabel.TextSize = 14
 speedLabel.TextXAlignment = Enum.TextXAlignment.Left
 
--- TextBox
+-- TextBox (valor da velocidade)
 local speedBox = Instance.new("TextBox")
 speedBox.Parent = frame
 speedBox.Size = UDim2.new(0, 80, 0, 30)
-speedBox.Position = UDim2.new(0, 190, 1, -60)
+speedBox.Position = UDim2.new(0, 190, 1, -65)
 speedBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 speedBox.TextColor3 = Color3.fromRGB(255, 255, 255)
 speedBox.Font = Enum.Font.SourceSansBold
 speedBox.TextSize = 16
-speedBox.PlaceholderText = "Ex: 50"
-speedBox.Text = tostring(desiredWalkSpeed)
+speedBox.PlaceholderText = "Ex: 80"
+speedBox.Text = tostring(speedValue)
 speedBox.ClearTextOnFocus = false
 
 local speedBoxCorner = Instance.new("UICorner")
 speedBoxCorner.CornerRadius = UDim.new(0, 6)
 speedBoxCorner.Parent = speedBox
 
--- Botão aplicar
-local applySpeedBtn = Instance.new("TextButton")
-applySpeedBtn.Parent = frame
-applySpeedBtn.Size = UDim2.new(0, 80, 0, 30)
-applySpeedBtn.Position = UDim2.new(0, 280, 1, -60)
-applySpeedBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-applySpeedBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-applySpeedBtn.Font = Enum.Font.SourceSansBold
-applySpeedBtn.TextSize = 14
-applySpeedBtn.Text = "Aplicar"
+-- Toggle Button
+local speedToggle = Instance.new("TextButton")
+speedToggle.Parent = frame
+speedToggle.Size = UDim2.new(0, 160, 0, 35)
+speedToggle.Position = UDim2.new(0, 280, 1, -67)
+speedToggle.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+speedToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+speedToggle.Font = Enum.Font.SourceSansBold
+speedToggle.TextSize = 16
+speedToggle.Text = "Speed: OFF"
 
-local applyCorner = Instance.new("UICorner")
-applyCorner.CornerRadius = UDim.new(0, 6)
-applyCorner.Parent = applySpeedBtn
+local speedToggleCorner = Instance.new("UICorner")
+speedToggleCorner.CornerRadius = UDim.new(0, 8)
+speedToggleCorner.Parent = speedToggle
 
--- Função aplicar WalkSpeed
-local function applyWalkSpeed()
-	local value = tonumber(speedBox.Text)
-	if value and value > 0 then
-		desiredWalkSpeed = value
+-- Loop de velocidade por Velocity
+local function startVelocitySpeed()
+	if speedConnection then return end
+
+	speedConnection = RunService.Heartbeat:Connect(function()
+		if not speedEnabled then return end
+
 		local char = player.Character
-		if char and char:FindFirstChild("Humanoid") then
-			char.Humanoid.WalkSpeed = desiredWalkSpeed
+		if not char then return end
+
+		local root = char:FindFirstChild("HumanoidRootPart")
+		local hum = char:FindFirstChildOfClass("Humanoid")
+
+		if root and hum then
+			local moveDir = hum.MoveDirection
+			if moveDir.Magnitude > 0 then
+				local currentY = root.AssemblyLinearVelocity.Y
+				root.AssemblyLinearVelocity =
+					(moveDir.Unit * speedValue) + Vector3.new(0, currentY, 0)
+			end
 		end
-	end
+	end)
 end
 
-applySpeedBtn.MouseButton1Click:Connect(applyWalkSpeed)
+-- Toggle ON / OFF
+speedToggle.MouseButton1Click:Connect(function()
+	speedEnabled = not speedEnabled
 
--- Mantém WalkSpeed após respawn
-player.CharacterAdded:Connect(function(char)
-	local hum = char:WaitForChild("Humanoid")
-	hum.WalkSpeed = desiredWalkSpeed
+	if speedEnabled then
+		local value = tonumber(speedBox.Text)
+		if value and value > 0 then
+			speedValue = value
+		end
+
+		speedToggle.Text = "Speed: ON"
+		speedToggle.BackgroundColor3 = Color3.fromRGB(0, 140, 0)
+		startVelocitySpeed()
+	else
+		speedToggle.Text = "Speed: OFF"
+		speedToggle.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+	end
+end)
+
+-- Atualiza valor ao mudar o número
+speedBox.FocusLost:Connect(function()
+	local value = tonumber(speedBox.Text)
+	if value and value > 0 then
+		speedValue = value
+	end
+end)
+
+-- Mantém após respawn
+player.CharacterAdded:Connect(function()
+	task.wait(0.3)
+	if speedEnabled then
+		startVelocitySpeed()
+	end
 end)
