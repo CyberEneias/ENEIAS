@@ -9,12 +9,12 @@ if not player then return end
 
 -- ===== CONSTANTES =====
 local CONFIG = {
-	BACK_DISTANCE = 3.5,
+	BACK_DISTANCE = 3.0,
 	HEIGHT_OFFSET = 2.5,
-	MAX_DISTANCE = 60,
+	MAX_DISTANCE = 10,
 	UPDATE_INTERVAL = 1,
 	GUI_NAME = "InfoExperienciaGui",
-	NPC_SCAN_INTERVAL = 0.3
+	NPC_SCAN_INTERVAL = 0.10
 }
 
 local COLORS = {
@@ -256,7 +256,7 @@ speedBox.Position = UDim2_new(0, 15, 0, 35)
 speedBox.BackgroundColor3 = COLORS.INPUT_BG
 speedBox.TextColor3 = COLORS.TEXT
 speedBox.Font = Enum.Font.GothamBold
-speedBox.TextSize = 18
+speedBox.TextSize = 11
 speedBox.PlaceholderText = "50"
 speedBox.Text = tostring(state.speedValue)
 speedBox.ClearTextOnFocus = false
@@ -274,7 +274,7 @@ versionLabel.BackgroundTransparency = 1
 versionLabel.TextColor3 = COLORS.TEXT_SECONDARY
 versionLabel.Font = Enum.Font.Gotham
 versionLabel.TextSize = 11
-versionLabel.Text = "v2.0 Ultra-Leve | Pressione F1 para minimizar"
+versionLabel.Text = "v1.0 Basic | Pressione F1 para minimizar"
 versionLabel.TextXAlignment = Enum.TextXAlignment.Center
 
 -- ===== DRAG FUNCTIONALITY =====
@@ -329,7 +329,7 @@ minimizeButton.MouseButton1Click:Connect(function()
 	frame.Visible = false
 end)
 
--- ===== AUTOFARM ULTRA-LEVE (CORRIGIDO) =====
+-- =====AUTOFARM ULTRA-LEVE=====
 
 -- Busca NPCs válidos
 local function updateNPCCache()
