@@ -1,4 +1,4 @@
--- ===== AUTOFARM COM ANTI-KNOCKBACK, INFINITE JUMP E VELOCITY SPEED (ULTRA-LEVE) =====
+-- ===== AUTOFARM COM LINHA DE VISÃO, INFINITE JUMP E VELOCITY SPEED =====
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -14,7 +14,7 @@ local CONFIG = {
     MAX_DISTANCE = 60,
     UPDATE_INTERVAL = 1,
     GUI_NAME = "InfoExperienciaGui",
-    NPC_SCAN_INTERVAL = 0.5
+    NPC_SCAN_INTERVAL = 0.3
 }
 
 local COLORS = {
@@ -50,7 +50,7 @@ local state = {
     guiVisible = true
 }
 
--- ===== UTILITY FUNCTIONS =====
+-- ===== UTILITIES =====
 local function cleanupOldGui()
     local oldGui = CoreGui:FindFirstChild(CONFIG.GUI_NAME)
     if oldGui then
@@ -86,13 +86,15 @@ local function createButton(parent, size, position, text, color)
     btn.AutoButtonColor = false
     createUICorner(8, btn)
     
+    -- Hover effect
     btn.MouseEnter:Connect(function()
         btn.BackgroundColor3 = Color3.fromRGB(
-            math.min(255, color.R*255 + 20),
-            math.min(255, color.G*255 + 20),
-            math.min(255, color.B*255 + 20)
+            math.min(255, color.R * 255 + 20),
+            math.min(255, color.G * 255 + 20),
+            math.min(255, color.B * 255 + 20)
         )
     end)
+    
     btn.MouseLeave:Connect(function()
         btn.BackgroundColor3 = color
     end)
@@ -102,7 +104,6 @@ end
 
 -- ===== GUI CREATION =====
 cleanupOldGui()
-
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = CONFIG.GUI_NAME
 screenGui.ResetOnSpawn = false
@@ -137,7 +138,7 @@ titleLabel.TextSize = 20
 titleLabel.Text = "🎮 AUTOFARM CONTROLLER"
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 
--- Minimize / Close
+-- Minimize & Close buttons
 local minimizeButton = Instance.new("TextButton")
 minimizeButton.Parent = header
 minimizeButton.Size = UDim2_new(0, 35, 0, 35)
@@ -162,14 +163,14 @@ closeButton.TextSize = 24
 closeButton.BorderSizePixel = 0
 createUICorner(8, closeButton)
 
--- Container principal
+-- Container
 local container = Instance.new("Frame")
 container.Parent = frame
 container.Size = UDim2_new(1, -40, 1, -70)
 container.Position = UDim2_new(0, 20, 0, 60)
 container.BackgroundTransparency = 1
 
--- Info Section
+-- Info
 local infoFrame = Instance.new("Frame")
 infoFrame.Parent = container
 infoFrame.Size = UDim2_new(1, 0, 0, 70)
@@ -202,12 +203,12 @@ statusLabel.TextXAlignment = Enum.TextXAlignment.Right
 statusLabel.TextYAlignment = Enum.TextYAlignment.Center
 statusLabel.Text = "🎯 NPC: Nenhum"
 
--- Botões principais
+-- Botões
 local buttonY = 85
 local autofarmBtn = createButton(container, UDim2_new(0, 200, 0, 45), UDim2_new(0, 0, 0, buttonY), "🤖 Autofarm: OFF", COLORS.BTN_OFF)
 local jumpBtn = createButton(container, UDim2_new(0, 200, 0, 45), UDim2_new(0, 220, 0, buttonY), "🚀 Infinite Jump: OFF", COLORS.BTN_OFF)
 
--- Speed Section
+-- Speed
 local speedFrame = Instance.new("Frame")
 speedFrame.Parent = container
 speedFrame.Size = UDim2_new(1, 0, 0, 60)
@@ -243,19 +244,7 @@ createUICorner(8, speedBox)
 
 local speedToggle = createButton(speedFrame, UDim2_new(0, 200, 0, 45), UDim2_new(0, 130, 0, 7.5), "💨 Speed: OFF", COLORS.BTN_OFF)
 
--- Indicador de versão
-local versionLabel = Instance.new("TextLabel")
-versionLabel.Parent = container
-versionLabel.Size = UDim2_new(1, 0, 0, 15)
-versionLabel.Position = UDim2_new(0, 0, 1, -15)
-versionLabel.BackgroundTransparency = 1
-versionLabel.TextColor3 = COLORS.TEXT_SECONDARY
-versionLabel.Font = Enum.Font.Gotham
-versionLabel.TextSize = 11
-versionLabel.Text = "v2.0 Ultra-Leve | Pressione F1 para minimizar"
-versionLabel.TextXAlignment = Enum.TextXAlignment.Center
-
--- ===== DRAG FUNCTIONALITY =====
+-- ===== DRAG & F1 =====
 do
     local dragging, dragStart, startPos = false, nil, nil
     local function updateDrag(input)
@@ -268,8 +257,7 @@ do
         )
     end
     header.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or 
-           input.UserInputType == Enum.UserInputType.Touch then
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
             dragStart = input.Position
             startPos = frame.Position
@@ -286,75 +274,57 @@ do
         end
     end)
 end
-
--- ===== F1 TOGGLE =====
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
     if input.KeyCode == Enum.KeyCode.F1 then
         state.guiVisible = not state.guiVisible
         frame.Visible = state.guiVisible
     end
 end)
-
 minimizeButton.MouseButton1Click:Connect(function()
     state.guiVisible = false
     frame.Visible = false
 end)
-
 closeButton.MouseButton1Click:Connect(function()
     screenGui:Destroy()
 end)
 
-screenGui.Destroying:Connect(function()
-    for name, _ in pairs(state.connections) do
-        disconnectConnection(name)
-    end
-    table.clear(state.npcCache)
-end)
-
--- ===== AUTOFARM ULTRA-LEVE =====
-state.npcCache = {}
-
+-- ===== AUTOFARM COM LINHA DE VISÃO =====
 local function updateNPCCache()
+    table.clear(state.npcCache)
+    
     local character = player.Character
     if not character then return end
     local root = character:FindFirstChild("HumanoidRootPart")
     if not root then return end
     local rootPos = root.Position
 
-    for _, obj in ipairs(workspace:GetChildren()) do
-        local humanoid = obj:FindFirstChildOfClass("Humanoid")
-        local npcRoot = obj:FindFirstChild("HumanoidRootPart")
+    local rayParams = RaycastParams.new()
+    rayParams.FilterDescendantsInstances = {character}
+    rayParams.FilterType = Enum.RaycastFilterType.Blacklist
 
-        if humanoid and npcRoot and humanoid.Health > 0 and obj ~= character and
-           not Players:GetPlayerFromCharacter(obj) then
-            local exists = false
-            for _, data in ipairs(state.npcCache) do
-                if data.model == obj then
-                    exists = true
-                    break
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj ~= character then
+            local humanoid = obj:FindFirstChild("Humanoid")
+            local npcRoot = obj:FindFirstChild("HumanoidRootPart")
+            if humanoid and npcRoot and humanoid.Health > 0 and not Players:GetPlayerFromCharacter(obj) then
+                local distance = (rootPos - npcRoot.Position).Magnitude
+                if distance <= CONFIG.MAX_DISTANCE then
+                    local direction = (npcRoot.Position - rootPos)
+                    local rayResult = workspace:Raycast(rootPos, direction, rayParams)
+                    if not rayResult or rayResult.Instance:IsDescendantOf(obj) then
+                        table.insert(state.npcCache, {
+                            model = obj,
+                            root = npcRoot,
+                            humanoid = humanoid,
+                            distance = distance
+                        })
+                    end
                 end
             end
-            if not exists then
-                table.insert(state.npcCache, {model = obj, humanoid = humanoid, root = npcRoot})
-            end
         end
     end
-
-    -- Remove NPCs mortos ou removidos
-    for i = #state.npcCache, 1, -1 do
-        local data = state.npcCache[i]
-        if not data.model.Parent or data.humanoid.Health <= 0 then
-            table.remove(state.npcCache, i)
-        else
-            data.distance = (data.root.Position - rootPos).Magnitude
-        end
-    end
-
-    -- Ordena por distância
-    table.sort(state.npcCache, function(a, b)
-        return a.distance < b.distance
-    end)
+    table.sort(state.npcCache, function(a,b) return a.distance < b.distance end)
 end
 
 local function findClosestNPC()
@@ -364,17 +334,26 @@ local function findClosestNPC()
         state.lastNPCScan = currentTime
     end
 
+    local character = player.Character
+    if not character then return nil end
+    local root = character:FindFirstChild("HumanoidRootPart")
+    if not root then return nil end
+
     for _, npcData in ipairs(state.npcCache) do
         if npcData.model and npcData.model.Parent and npcData.humanoid.Health > 0 then
-            return npcData.model
+            local dist = (npcData.root.Position - root.Position).Magnitude
+            if dist <= CONFIG.MAX_DISTANCE then
+                return npcData.model
+            end
         end
     end
+
     return nil
 end
 
 local function isNPCValid(npc)
     if not npc or not npc.Parent then return false end
-    local humanoid = npc:FindFirstChildOfClass("Humanoid")
+    local humanoid = npc:FindFirstChild("Humanoid")
     if not humanoid or humanoid.Health <= 0 then return false end
     local character = player.Character
     if not character then return false end
@@ -407,15 +386,13 @@ local function autofarmLoop()
         return
     end
 
-    local backVector = -npcRoot.CFrame.LookVector * CONFIG.BACK_DISTANCE
+    local npcCFrame = npcRoot.CFrame
+    local backVector = -npcCFrame.LookVector * CONFIG.BACK_DISTANCE
     local upVector = Vector3_new(0, CONFIG.HEIGHT_OFFSET, 0)
     local targetCFrame = CFrame_new(npcRoot.Position + backVector + upVector)
 
-    -- Anti-knockback
     root.AssemblyLinearVelocity = Vector3_zero
     root.AssemblyAngularVelocity = Vector3_zero
-
-    -- Teleporte
     root.CFrame = targetCFrame
 
     statusLabel.Text = "🎯 NPC: " .. npc.Name
@@ -423,7 +400,6 @@ end
 
 autofarmBtn.MouseButton1Click:Connect(function()
     state.autofarmEnabled = not state.autofarmEnabled
-
     if state.autofarmEnabled then
         disconnectConnection("autofarm")
         state.lastNPCScan = 0
@@ -463,43 +439,40 @@ UserInputService.JumpRequest:Connect(function()
     end
 end)
 
--- ===== SPEED CONTROL =====
+-- ===== VELOCITY SPEED =====
+local function velocitySpeedLoop()
+    if not state.speedEnabled then return end
+    local char = player.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if root and hum then
+        local moveDir = hum.MoveDirection
+        if moveDir.Magnitude > 0 then
+            local currentVelocity = moveDir.Unit * state.speedValue
+            root.Velocity = Vector3_new(currentVelocity.X, root.Velocity.Y, currentVelocity.Z)
+        end
+    end
+end
+
 speedToggle.MouseButton1Click:Connect(function()
     state.speedEnabled = not state.speedEnabled
     if state.speedEnabled then
+        state.connections.velocity = RunService.Heartbeat:Connect(velocitySpeedLoop)
         speedToggle.Text = "💨 Speed: ON"
         speedToggle.BackgroundColor3 = COLORS.BTN_ON
     else
+        disconnectConnection("velocity")
         speedToggle.Text = "💨 Speed: OFF"
         speedToggle.BackgroundColor3 = COLORS.BTN_OFF
-        local character = player.Character
-        if character then
-            local root = character:FindFirstChild("HumanoidRootPart")
-            if root then
-                root.AssemblyLinearVelocity = Vector3_zero
-            end
-        end
     end
 end)
 
-speedBox.FocusLost:Connect(function(enterPressed)
+speedBox.FocusLost:Connect(function(enter)
     local val = tonumber(speedBox.Text)
-    if val then
+    if val and val > 0 then
         state.speedValue = val
     else
         speedBox.Text = tostring(state.speedValue)
-    end
-end)
-
-RunService.Heartbeat:Connect(function()
-    if state.speedEnabled then
-        local character = player.Character
-        if character then
-            local root = character:FindFirstChild("HumanoidRootPart")
-            if root then
-                local lookVector = root.CFrame.LookVector
-                root.AssemblyLinearVelocity = lookVector * state.speedValue
-            end
-        end
     end
 end)
