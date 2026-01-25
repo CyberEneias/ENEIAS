@@ -1,70 +1,107 @@
--- ===== AUTOFARM COSTAS FIXO (COMPASSO) COM ANTI-KNOCKBACK E INFINITE JUMP =====
+-- ===== AUTOFARM OTIMIZADO COM ANTI-KNOCKBACK, INFINITE JUMP E VELOCITY SPEED =====
 local Players = game:GetService("Players")
-local player = Players.LocalPlayer
-local CoreGui = game:GetService("CoreGui")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
 
+local player = Players.LocalPlayer
 if not player then return end
 
--- Remove GUI antiga
-pcall(function()
-	CoreGui:FindFirstChild("InfoExperienciaGui"):Destroy()
-end)
+-- ===== CONSTANTES =====
+local CONFIG = {
+	BACK_DISTANCE = 3.5,
+	HEIGHT_OFFSET = 2.5,
+	MAX_DISTANCE = 60,
+	UPDATE_INTERVAL = 1,
+	GUI_NAME = "InfoExperienciaGui"
+}
 
--- GUI principal
+local COLORS = {
+	BACKGROUND = Color3.fromRGB(20, 20, 20),
+	CLOSE_BTN = Color3.fromRGB(255, 50, 50),
+	BTN_OFF = Color3.fromRGB(40, 40, 40),
+	BTN_ON = Color3.fromRGB(0, 140, 0),
+	TEXT = Color3.fromRGB(255, 255, 255),
+	TEXT_SECONDARY = Color3.fromRGB(200, 200, 200),
+	INPUT_BG = Color3.fromRGB(30, 30, 30)
+}
+
+-- ===== CACHE =====
+local workspace = workspace
+local Vector3_new = Vector3.new
+local Vector3_zero = Vector3.zero
+local CFrame_new = CFrame.new
+local UDim2_new = UDim2.new
+
+-- ===== STATE =====
+local state = {
+	autofarmEnabled = false,
+	infiniteJumpEnabled = false,
+	speedEnabled = false,
+	speedValue = 50,
+	lockedNPC = nil,
+	connections = {}
+}
+
+-- ===== UTILITY FUNCTIONS =====
+local function cleanupOldGui()
+	local oldGui = CoreGui:FindFirstChild(CONFIG.GUI_NAME)
+	if oldGui then
+		oldGui:Destroy()
+	end
+end
+
+local function createUICorner(radius, parent)
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, radius)
+	corner.Parent = parent
+	return corner
+end
+
+local function disconnectConnection(name)
+	if state.connections[name] then
+		state.connections[name]:Disconnect()
+		state.connections[name] = nil
+	end
+end
+
+-- ===== GUI CREATION =====
+cleanupOldGui()
+
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "InfoExperienciaGui"
+screenGui.Name = CONFIG.GUI_NAME
 screenGui.ResetOnSpawn = false
 screenGui.Parent = CoreGui
 
--- Frame
 local frame = Instance.new("Frame")
 frame.Parent = screenGui
-frame.Size = UDim2.new(0, 520, 0, 180)
-frame.Position = UDim2.new(0, 40, 0, 40)
-frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+frame.Size = UDim2_new(0, 520, 0, 180)
+frame.Position = UDim2_new(0, 40, 0, 40)
+frame.BackgroundColor3 = COLORS.BACKGROUND
 frame.BorderSizePixel = 0
 frame.Active = true
-
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 12)
-corner.Parent = frame
+createUICorner(12, frame)
 
 -- Texto principal
 local textLabel = Instance.new("TextLabel")
 textLabel.Parent = frame
-textLabel.Size = UDim2.new(1, -20, 1, -100)
-textLabel.Position = UDim2.new(0, 10, 0, 10)
+textLabel.Size = UDim2_new(1, -20, 1, -100)
+textLabel.Position = UDim2_new(0, 10, 0, 10)
 textLabel.BackgroundTransparency = 1
-textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+textLabel.TextColor3 = COLORS.TEXT
 textLabel.Font = Enum.Font.SourceSansBold
 textLabel.TextWrapped = true
 textLabel.TextScaled = true
 textLabel.TextXAlignment = Enum.TextXAlignment.Left
 textLabel.TextYAlignment = Enum.TextYAlignment.Top
 
-local nomeExperiencia = game.Name
-
--- Atualização de data/hora
-task.spawn(function()
-	while frame.Parent do
-		local dataHora = os.date("%d/%m/%Y - %H:%M:%S")
-		textLabel.Text =
-			"Experiência em Teste:\n" ..
-			nomeExperiencia ..
-			"\n\nData e Hora:\n" .. dataHora
-		task.wait(1)
-	end
-end)
-
 -- Status do NPC
 local statusLabel = Instance.new("TextLabel")
 statusLabel.Parent = frame
-statusLabel.Size = UDim2.new(1, -20, 0, 20)
-statusLabel.Position = UDim2.new(0, 10, 1, -80)
+statusLabel.Size = UDim2_new(1, -20, 0, 20)
+statusLabel.Position = UDim2_new(0, 10, 1, -80)
 statusLabel.BackgroundTransparency = 1
-statusLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+statusLabel.TextColor3 = COLORS.TEXT_SECONDARY
 statusLabel.Font = Enum.Font.SourceSans
 statusLabel.TextSize = 14
 statusLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -73,106 +110,86 @@ statusLabel.Text = "NPC: Nenhum"
 -- Botão de fechar
 local closeButton = Instance.new("TextButton")
 closeButton.Parent = frame
-closeButton.Size = UDim2.new(0, 30, 0, 30)
-closeButton.Position = UDim2.new(1, -35, 0, 5)
-closeButton.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeButton.Size = UDim2_new(0, 30, 0, 30)
+closeButton.Position = UDim2_new(1, -35, 0, 5)
+closeButton.BackgroundColor3 = COLORS.CLOSE_BTN
+closeButton.TextColor3 = COLORS.TEXT
 closeButton.Font = Enum.Font.SourceSansBold
 closeButton.Text = "X"
 closeButton.TextSize = 18
+createUICorner(8, closeButton)
 
-local closeCorner = Instance.new("UICorner")
-closeCorner.CornerRadius = UDim.new(0, 8)
-closeCorner.Parent = closeButton
+-- ===== DRAG FUNCTIONALITY =====
+do
+	local dragging, dragStart, startPos = false, nil, nil
 
-closeButton.MouseButton1Click:Connect(function()
-	screenGui:Destroy()
-end)
+	local function updateDrag(input)
+		local delta = input.Position - dragStart
+		frame.Position = UDim2_new(
+			startPos.X.Scale,
+			startPos.X.Offset + delta.X,
+			startPos.Y.Scale,
+			startPos.Y.Offset + delta.Y
+		)
+	end
 
--- DRAG
-local dragging = false
-local dragStart
-local startPos
+	frame.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+		   input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			dragStart = input.Position
+			startPos = frame.Position
 
-local function update(input)
-	local delta = input.Position - dragStart
-	frame.Position = UDim2.new(
-		startPos.X.Scale,
-		startPos.X.Offset + delta.X,
-		startPos.Y.Scale,
-		startPos.Y.Offset + delta.Y
-	)
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
+				end
+			end)
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or 
+		                 input.UserInputType == Enum.UserInputType.Touch) then
+			updateDrag(input)
+		end
+	end)
 end
 
-frame.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1
-	or input.UserInputType == Enum.UserInputType.Touch then
-		dragging = true
-		dragStart = input.Position
-		startPos = frame.Position
-
-		input.Changed:Connect(function()
-			if input.UserInputState == Enum.UserInputState.End then
-				dragging = false
-			end
-		end)
-	end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-	if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
-	or input.UserInputType == Enum.UserInputType.Touch) then
-		update(input)
-	end
-end)
-
--- ===== AUTOFARM CONFIG =====
-local autofarmEnabled = false
-local lockedNPC = nil
-local connection = nil
-
--- CONFIGURAÇÕES
-local BACK_DISTANCE = 3.5
-local HEIGHT_OFFSET = 2.5
-local MAX_DISTANCE = 60
-
--- Botão toggle autofarm
+-- ===== AUTOFARM =====
 local toggleButton = Instance.new("TextButton")
 toggleButton.Parent = frame
-toggleButton.Size = UDim2.new(0, 160, 0, 40)
-toggleButton.Position = UDim2.new(1, -170, 1, -50)
-toggleButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleButton.Size = UDim2_new(0, 160, 0, 40)
+toggleButton.Position = UDim2_new(1, -170, 1, -50)
+toggleButton.BackgroundColor3 = COLORS.BTN_OFF
+toggleButton.TextColor3 = COLORS.TEXT
 toggleButton.Font = Enum.Font.SourceSansBold
 toggleButton.TextSize = 18
 toggleButton.Text = "Autofarm: OFF"
+createUICorner(8, toggleButton)
 
-local btnCorner = Instance.new("UICorner")
-btnCorner.CornerRadius = UDim.new(0, 8)
-btnCorner.Parent = toggleButton
-
--- Função para encontrar NPC mais próximo
 local function findClosestNPC()
 	local character = player.Character
-	if not character or not character:FindFirstChild("HumanoidRootPart") then
-		return nil
-	end
+	if not character then return nil end
+	
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if not root then return nil end
 
-	local root = character.HumanoidRootPart
-	local closest, minDist = nil, MAX_DISTANCE
+	local rootPos = root.Position
+	local closest, minDist = nil, CONFIG.MAX_DISTANCE
 
 	for _, model in ipairs(workspace:GetDescendants()) do
-		if model:IsA("Model")
-			and model ~= character
-			and not Players:GetPlayerFromCharacter(model) -- Ignora jogadores
-			and model:FindFirstChild("Humanoid")
-			and model:FindFirstChild("HumanoidRootPart")
-			and model.Humanoid.Health > 0 then
-
-			local dist = (root.Position - model.HumanoidRootPart.Position).Magnitude
-			if dist < minDist then
-				minDist = dist
-				closest = model
+		if model:IsA("Model") and model ~= character then
+			local humanoid = model:FindFirstChild("Humanoid")
+			local npcRoot = model:FindFirstChild("HumanoidRootPart")
+			
+			if humanoid and npcRoot and humanoid.Health > 0 and 
+			   not Players:GetPlayerFromCharacter(model) then
+				local dist = (rootPos - npcRoot.Position).Magnitude
+				if dist < minDist then
+					minDist = dist
+					closest = model
+				end
 			end
 		end
 	end
@@ -180,220 +197,211 @@ local function findClosestNPC()
 	return closest
 end
 
--- Função de autofarm
 local function autofarmLoop()
-	if not autofarmEnabled then return end
+	if not state.autofarmEnabled then return end
 	
-	pcall(function()
-		local character = player.Character
-		local root = character and character:FindFirstChild("HumanoidRootPart")
+	local character = player.Character
+	if not character then return end
+	
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if not root then return end
 
-		if root then
-			-- valida NPC travado
-			if not lockedNPC
-				or not lockedNPC.Parent
-				or not lockedNPC:FindFirstChild("Humanoid")
-				or lockedNPC.Humanoid.Health <= 0 then
+	-- Valida NPC travado
+	local npc = state.lockedNPC
+	if not npc or not npc.Parent or not npc:FindFirstChild("Humanoid") or 
+	   npc.Humanoid.Health <= 0 then
+		state.lockedNPC = findClosestNPC()
+		npc = state.lockedNPC
+	end
 
-				lockedNPC = findClosestNPC()
-			end
+	if npc then
+		local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+		if npcRoot then
+			-- Posição estática atrás do NPC
+			local npcLook = npcRoot.CFrame.LookVector
+			local targetPos = npcRoot.Position + 
+			                  (-npcLook * CONFIG.BACK_DISTANCE) + 
+			                  Vector3_new(0, CONFIG.HEIGHT_OFFSET, 0)
 
-			if lockedNPC and lockedNPC:FindFirstChild("HumanoidRootPart") then
-				local npcRoot = lockedNPC.HumanoidRootPart
-
-				-- === POSIÇÃO ESTÁTICA ATRÁS DO NPC ===
-				local npcLook = npcRoot.CFrame.LookVector
-				local targetPos = npcRoot.Position
-					+ (-npcLook * BACK_DISTANCE)
-					+ Vector3.new(0, HEIGHT_OFFSET, 0)
-
-				-- ANTI KNOCKBACK
-				root.AssemblyLinearVelocity = Vector3.zero
-				root.AssemblyAngularVelocity = Vector3.zero
-
-				-- POSICIONA ESTÁTICO
-				root.CFrame = CFrame.new(targetPos)
-				
-				-- Atualiza status
-				statusLabel.Text = "NPC: " .. lockedNPC.Name
-			else
-				statusLabel.Text = "NPC: Nenhum"
-			end
+			-- Anti knockback e posicionamento
+			root.AssemblyLinearVelocity = Vector3_zero
+			root.AssemblyAngularVelocity = Vector3_zero
+			root.CFrame = CFrame_new(targetPos)
+			
+			statusLabel.Text = "NPC: " .. npc.Name
+			return
 		end
-	end)
+	end
+	
+	statusLabel.Text = "NPC: Nenhum"
 end
 
--- Toggle autofarm
 toggleButton.MouseButton1Click:Connect(function()
-	autofarmEnabled = not autofarmEnabled
+	state.autofarmEnabled = not state.autofarmEnabled
 	
-	if autofarmEnabled then
-		if connection then connection:Disconnect() end
-		connection = RunService.Heartbeat:Connect(autofarmLoop)
+	if state.autofarmEnabled then
+		disconnectConnection("autofarm")
+		state.connections.autofarm = RunService.Heartbeat:Connect(autofarmLoop)
 		toggleButton.Text = "Autofarm: ON"
-		toggleButton.BackgroundColor3 = Color3.fromRGB(0, 140, 0)
+		toggleButton.BackgroundColor3 = COLORS.BTN_ON
 	else
-		if connection then 
-			connection:Disconnect()
-			connection = nil
-		end
-		lockedNPC = nil
+		disconnectConnection("autofarm")
+		state.lockedNPC = nil
 		toggleButton.Text = "Autofarm: OFF"
-		toggleButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+		toggleButton.BackgroundColor3 = COLORS.BTN_OFF
 		statusLabel.Text = "NPC: Nenhum"
 	end
 end)
 
--- ===== INFINITE JUMP CONFIG =====
-local infiniteJumpEnabled = false
-
--- Botão toggle infinite jump
+-- ===== INFINITE JUMP =====
 local infiniteJumpButton = Instance.new("TextButton")
 infiniteJumpButton.Parent = frame
-infiniteJumpButton.Size = UDim2.new(0, 160, 0, 40)
-infiniteJumpButton.Position = UDim2.new(0, 10, 1, -50)
-infiniteJumpButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-infiniteJumpButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+infiniteJumpButton.Size = UDim2_new(0, 160, 0, 40)
+infiniteJumpButton.Position = UDim2_new(0, 10, 1, -50)
+infiniteJumpButton.BackgroundColor3 = COLORS.BTN_OFF
+infiniteJumpButton.TextColor3 = COLORS.TEXT
 infiniteJumpButton.Font = Enum.Font.SourceSansBold
 infiniteJumpButton.TextSize = 18
 infiniteJumpButton.Text = "Infinite Jump: OFF"
-
-local jumpBtnCorner = Instance.new("UICorner")
-jumpBtnCorner.CornerRadius = UDim.new(0, 8)
-jumpBtnCorner.Parent = infiniteJumpButton
+createUICorner(8, infiniteJumpButton)
 
 infiniteJumpButton.MouseButton1Click:Connect(function()
-	infiniteJumpEnabled = not infiniteJumpEnabled
-	if infiniteJumpEnabled then
+	state.infiniteJumpEnabled = not state.infiniteJumpEnabled
+	
+	if state.infiniteJumpEnabled then
 		infiniteJumpButton.Text = "Infinite Jump: ON"
-		infiniteJumpButton.BackgroundColor3 = Color3.fromRGB(0, 140, 0)
+		infiniteJumpButton.BackgroundColor3 = COLORS.BTN_ON
 	else
 		infiniteJumpButton.Text = "Infinite Jump: OFF"
-		infiniteJumpButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+		infiniteJumpButton.BackgroundColor3 = COLORS.BTN_OFF
 	end
 end)
 
--- Listener do salto
 UserInputService.JumpRequest:Connect(function()
-	if infiniteJumpEnabled then
-		local character = player.Character
-		if character and character:FindFirstChild("Humanoid") then
-			character.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-		end
+	if not state.infiniteJumpEnabled then return end
+	
+	local character = player.Character
+	if not character then return end
+	
+	local humanoid = character:FindFirstChild("Humanoid")
+	if humanoid then
+		humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
 	end
 end)
 
--- Limpeza quando a GUI for fechada
-screenGui.Destroying:Connect(function()
-	if connection then
-		connection:Disconnect()
-	end
-end)
-
--- ===== VELOCITY BASED SPEED =====
-local speedEnabled = false
-local speedValue = 50
-local speedConnection
-
--- Label
+-- ===== VELOCITY SPEED =====
 local speedLabel = Instance.new("TextLabel")
 speedLabel.Parent = frame
-speedLabel.Size = UDim2.new(0, 160, 0, 20)
-speedLabel.Position = UDim2.new(0, 190, 1, -90)
+speedLabel.Size = UDim2_new(0, 160, 0, 20)
+speedLabel.Position = UDim2_new(0, 190, 1, -90)
 speedLabel.BackgroundTransparency = 1
 speedLabel.Text = "Velocity Speed:"
-speedLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+speedLabel.TextColor3 = COLORS.TEXT
 speedLabel.Font = Enum.Font.SourceSans
 speedLabel.TextSize = 14
 speedLabel.TextXAlignment = Enum.TextXAlignment.Left
 
--- TextBox (valor da velocidade)
 local speedBox = Instance.new("TextBox")
 speedBox.Parent = frame
-speedBox.Size = UDim2.new(0, 80, 0, 30)
-speedBox.Position = UDim2.new(0, 190, 1, -65)
-speedBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-speedBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+speedBox.Size = UDim2_new(0, 80, 0, 30)
+speedBox.Position = UDim2_new(0, 190, 1, -65)
+speedBox.BackgroundColor3 = COLORS.INPUT_BG
+speedBox.TextColor3 = COLORS.TEXT
 speedBox.Font = Enum.Font.SourceSansBold
 speedBox.TextSize = 16
 speedBox.PlaceholderText = "Ex: 80"
-speedBox.Text = tostring(speedValue)
+speedBox.Text = tostring(state.speedValue)
 speedBox.ClearTextOnFocus = false
+createUICorner(6, speedBox)
 
-local speedBoxCorner = Instance.new("UICorner")
-speedBoxCorner.CornerRadius = UDim.new(0, 6)
-speedBoxCorner.Parent = speedBox
-
--- Toggle Button
 local speedToggle = Instance.new("TextButton")
 speedToggle.Parent = frame
-speedToggle.Size = UDim2.new(0, 160, 0, 35)
-speedToggle.Position = UDim2.new(0, 280, 1, -67)
-speedToggle.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-speedToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+speedToggle.Size = UDim2_new(0, 160, 0, 35)
+speedToggle.Position = UDim2_new(0, 280, 1, -67)
+speedToggle.BackgroundColor3 = COLORS.BTN_OFF
+speedToggle.TextColor3 = COLORS.TEXT
 speedToggle.Font = Enum.Font.SourceSansBold
 speedToggle.TextSize = 16
 speedToggle.Text = "Speed: OFF"
+createUICorner(8, speedToggle)
 
-local speedToggleCorner = Instance.new("UICorner")
-speedToggleCorner.CornerRadius = UDim.new(0, 8)
-speedToggleCorner.Parent = speedToggle
+local function velocitySpeedLoop()
+	if not state.speedEnabled then return end
 
--- Loop de velocidade por Velocity
-local function startVelocitySpeed()
-	if speedConnection then return end
+	local char = player.Character
+	if not char then return end
 
-	speedConnection = RunService.Heartbeat:Connect(function()
-		if not speedEnabled then return end
+	local root = char:FindFirstChild("HumanoidRootPart")
+	local hum = char:FindFirstChildOfClass("Humanoid")
 
-		local char = player.Character
-		if not char then return end
-
-		local root = char:FindFirstChild("HumanoidRootPart")
-		local hum = char:FindFirstChildOfClass("Humanoid")
-
-		if root and hum then
-			local moveDir = hum.MoveDirection
-			if moveDir.Magnitude > 0 then
-				local currentY = root.AssemblyLinearVelocity.Y
-				root.AssemblyLinearVelocity =
-					(moveDir.Unit * speedValue) + Vector3.new(0, currentY, 0)
-			end
+	if root and hum then
+		local moveDir = hum.MoveDirection
+		if moveDir.Magnitude > 0 then
+			local currentY = root.AssemblyLinearVelocity.Y
+			root.AssemblyLinearVelocity = (moveDir.Unit * state.speedValue) + 
+			                               Vector3_new(0, currentY, 0)
 		end
-	end)
+	end
 end
 
--- Toggle ON / OFF
-speedToggle.MouseButton1Click:Connect(function()
-	speedEnabled = not speedEnabled
+local function startVelocitySpeed()
+	disconnectConnection("speed")
+	state.connections.speed = RunService.Heartbeat:Connect(velocitySpeedLoop)
+end
 
-	if speedEnabled then
+speedToggle.MouseButton1Click:Connect(function()
+	state.speedEnabled = not state.speedEnabled
+
+	if state.speedEnabled then
 		local value = tonumber(speedBox.Text)
 		if value and value > 0 then
-			speedValue = value
+			state.speedValue = value
 		end
 
 		speedToggle.Text = "Speed: ON"
-		speedToggle.BackgroundColor3 = Color3.fromRGB(0, 140, 0)
+		speedToggle.BackgroundColor3 = COLORS.BTN_ON
 		startVelocitySpeed()
 	else
 		speedToggle.Text = "Speed: OFF"
-		speedToggle.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+		speedToggle.BackgroundColor3 = COLORS.BTN_OFF
+		disconnectConnection("speed")
 	end
 end)
 
--- Atualiza valor ao mudar o número
 speedBox.FocusLost:Connect(function()
 	local value = tonumber(speedBox.Text)
 	if value and value > 0 then
-		speedValue = value
+		state.speedValue = value
 	end
 end)
 
--- Mantém após respawn
+-- ===== UPDATES =====
+task.spawn(function()
+	local nomeExperiencia = game.Name
+	while frame.Parent do
+		textLabel.Text = string.format(
+			"Experiência em Teste:\n%s\n\nData e Hora:\n%s",
+			nomeExperiencia,
+			os.date("%d/%m/%Y - %H:%M:%S")
+		)
+		task.wait(CONFIG.UPDATE_INTERVAL)
+	end
+end)
+
+-- ===== CLEANUP =====
+closeButton.MouseButton1Click:Connect(function()
+	screenGui:Destroy()
+end)
+
+screenGui.Destroying:Connect(function()
+	for name, _ in pairs(state.connections) do
+		disconnectConnection(name)
+	end
+end)
+
 player.CharacterAdded:Connect(function()
 	task.wait(0.3)
-	if speedEnabled then
+	if state.speedEnabled then
 		startVelocitySpeed()
 	end
 end)
