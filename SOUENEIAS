@@ -1,4 +1,4 @@
--- ===== AUTOFARM OTIMIZADO COM ANTI-KNOCKBACK, INFINITE JUMP E VELOCITY SPEED =====
+-- ===== AUTOFARM ULTRA-LEVE COM ANTI-KNOCKBACK, INFINITE JUMP E VELOCITY SPEED =====
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -13,7 +13,9 @@ local CONFIG = {
 	HEIGHT_OFFSET = 2.5,
 	MAX_DISTANCE = 60,
 	UPDATE_INTERVAL = 1,
-	GUI_NAME = "InfoExperienciaGui"
+	GUI_NAME = "InfoExperienciaGui",
+	NPC_SCAN_INTERVAL = 0.5, -- Escaneia NPCs apenas a cada 0.5s
+	NPC_CACHE_SIZE = 50 -- Limita busca a 50 NPCs mais próximos
 }
 
 local COLORS = {
@@ -40,6 +42,8 @@ local state = {
 	speedEnabled = false,
 	speedValue = 50,
 	lockedNPC = nil,
+	lastNPCScan = 0,
+	npcCache = {}, -- Cache de NPCs válidos
 	connections = {}
 }
 
@@ -156,7 +160,7 @@ do
 	end)
 end
 
--- ===== AUTOFARM =====
+-- ===== AUTOFARM ULTRA-LEVE =====
 local toggleButton = Instance.new("TextButton")
 toggleButton.Parent = frame
 toggleButton.Size = UDim2_new(0, 160, 0, 40)
@@ -168,35 +172,96 @@ toggleButton.TextSize = 18
 toggleButton.Text = "Autofarm: OFF"
 createUICorner(8, toggleButton)
 
-local function findClosestNPC()
+-- Cache de NPCs para evitar GetDescendants repetido
+local function updateNPCCache()
+	table.clear(state.npcCache)
+	
 	local character = player.Character
-	if not character then return nil end
+	if not character then return end
 	
 	local root = character:FindFirstChild("HumanoidRootPart")
-	if not root then return nil end
-
+	if not root then return end
+	
 	local rootPos = root.Position
-	local closest, minDist = nil, CONFIG.MAX_DISTANCE
-
-	for _, model in ipairs(workspace:GetDescendants()) do
-		if model:IsA("Model") and model ~= character then
-			local humanoid = model:FindFirstChild("Humanoid")
-			local npcRoot = model:FindFirstChild("HumanoidRootPart")
+	local count = 0
+	
+	-- Busca apenas em Workspace (não GetDescendants recursivo)
+	for _, child in ipairs(workspace:GetChildren()) do
+		if count >= CONFIG.NPC_CACHE_SIZE then break end
+		
+		if child:IsA("Model") and child ~= character then
+			local humanoid = child:FindFirstChild("Humanoid")
+			local npcRoot = child:FindFirstChild("HumanoidRootPart")
 			
-			if humanoid and npcRoot and humanoid.Health > 0 and 
-			   not Players:GetPlayerFromCharacter(model) then
-				local dist = (rootPos - npcRoot.Position).Magnitude
-				if dist < minDist then
-					minDist = dist
-					closest = model
+			if humanoid and npcRoot and humanoid.Health > 0 and
+			   not Players:GetPlayerFromCharacter(child) then
+				
+				-- Só adiciona NPCs dentro do alcance máximo
+				local distance = (rootPos - npcRoot.Position).Magnitude
+				if distance <= CONFIG.MAX_DISTANCE then
+					table.insert(state.npcCache, {
+						model = child,
+						root = npcRoot,
+						distance = distance
+					})
+					count = count + 1
 				end
 			end
 		end
 	end
-
-	return closest
+	
+	-- Ordena por distância (mais próximo primeiro)
+	table.sort(state.npcCache, function(a, b)
+		return a.distance < b.distance
+	end)
 end
 
+-- Encontra o NPC mais próximo usando cache
+local function findClosestNPC()
+	-- Atualiza cache apenas se passou tempo suficiente
+	local currentTime = tick()
+	if currentTime - state.lastNPCScan >= CONFIG.NPC_SCAN_INTERVAL then
+		updateNPCCache()
+		state.lastNPCScan = currentTime
+	end
+	
+	-- Retorna o primeiro NPC válido do cache
+	for _, npcData in ipairs(state.npcCache) do
+		local model = npcData.model
+		if model and model.Parent then
+			local humanoid = model:FindFirstChild("Humanoid")
+			if humanoid and humanoid.Health > 0 then
+				return model
+			end
+		end
+	end
+	
+	return nil
+end
+
+-- Valida se o NPC travado ainda é válido
+local function isNPCValid(npc)
+	if not npc or not npc.Parent then return false end
+	
+	local humanoid = npc:FindFirstChild("Humanoid")
+	local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+	
+	if not humanoid or not npcRoot or humanoid.Health <= 0 then
+		return false
+	end
+	
+	-- Verifica se ainda está no alcance
+	local character = player.Character
+	if not character then return false end
+	
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if not root then return false end
+	
+	local distance = (root.Position - npcRoot.Position).Magnitude
+	return distance <= CONFIG.MAX_DISTANCE
+end
+
+-- Loop principal ULTRA-LEVE
 local function autofarmLoop()
 	if not state.autofarmEnabled then return end
 	
@@ -206,34 +271,38 @@ local function autofarmLoop()
 	local root = character:FindFirstChild("HumanoidRootPart")
 	if not root then return end
 
-	-- Valida NPC travado
-	local npc = state.lockedNPC
-	if not npc or not npc.Parent or not npc:FindFirstChild("Humanoid") or 
-	   npc.Humanoid.Health <= 0 then
+	-- Valida ou busca novo NPC
+	if not isNPCValid(state.lockedNPC) then
 		state.lockedNPC = findClosestNPC()
-		npc = state.lockedNPC
 	end
 
-	if npc then
-		local npcRoot = npc:FindFirstChild("HumanoidRootPart")
-		if npcRoot then
-			-- Posição estática atrás do NPC
-			local npcLook = npcRoot.CFrame.LookVector
-			local targetPos = npcRoot.Position + 
-			                  (-npcLook * CONFIG.BACK_DISTANCE) + 
-			                  Vector3_new(0, CONFIG.HEIGHT_OFFSET, 0)
-
-			-- Anti knockback e posicionamento
-			root.AssemblyLinearVelocity = Vector3_zero
-			root.AssemblyAngularVelocity = Vector3_zero
-			root.CFrame = CFrame_new(targetPos)
-			
-			statusLabel.Text = "NPC: " .. npc.Name
-			return
-		end
+	local npc = state.lockedNPC
+	if not npc then
+		statusLabel.Text = "NPC: Nenhum"
+		return
 	end
+
+	local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+	if not npcRoot then
+		state.lockedNPC = nil
+		return
+	end
+
+	-- Calcula posição fixa atrás do NPC
+	local npcCFrame = npcRoot.CFrame
+	local backOffset = -npcCFrame.LookVector * CONFIG.BACK_DISTANCE
+	local heightOffset = Vector3_new(0, CONFIG.HEIGHT_OFFSET, 0)
+	local targetPos = npcRoot.Position + backOffset + heightOffset
+
+	-- Anti-knockback (zera velocidades)
+	root.AssemblyLinearVelocity = Vector3_zero
+	root.AssemblyAngularVelocity = Vector3_zero
 	
-	statusLabel.Text = "NPC: Nenhum"
+	-- Teleporta para posição fixa
+	root.CFrame = CFrame_new(targetPos)
+	
+	-- Atualiza status
+	statusLabel.Text = "NPC: " .. npc.Name
 end
 
 toggleButton.MouseButton1Click:Connect(function()
@@ -241,12 +310,21 @@ toggleButton.MouseButton1Click:Connect(function()
 	
 	if state.autofarmEnabled then
 		disconnectConnection("autofarm")
-		state.connections.autofarm = RunService.Heartbeat:Connect(autofarmLoop)
+		
+		-- Limpa cache ao iniciar
+		state.lastNPCScan = 0
+		table.clear(state.npcCache)
+		
+		-- Conecta no RenderStepped (mais leve que Heartbeat)
+		state.connections.autofarm = RunService.RenderStepped:Connect(autofarmLoop)
+		
 		toggleButton.Text = "Autofarm: ON"
 		toggleButton.BackgroundColor3 = COLORS.BTN_ON
 	else
 		disconnectConnection("autofarm")
 		state.lockedNPC = nil
+		table.clear(state.npcCache)
+		
 		toggleButton.Text = "Autofarm: OFF"
 		toggleButton.BackgroundColor3 = COLORS.BTN_OFF
 		statusLabel.Text = "NPC: Nenhum"
@@ -397,6 +475,7 @@ screenGui.Destroying:Connect(function()
 	for name, _ in pairs(state.connections) do
 		disconnectConnection(name)
 	end
+	table.clear(state.npcCache)
 end)
 
 player.CharacterAdded:Connect(function()
