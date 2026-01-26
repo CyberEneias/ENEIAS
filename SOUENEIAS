@@ -3,7 +3,6 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
 local CoreGui = game:GetService("CoreGui")
 
 local player = Players.LocalPlayer
@@ -16,10 +15,7 @@ local CONFIG = {
 	MAX_DISTANCE = 60,
 	UPDATE_INTERVAL = 1,
 	GUI_NAME = "InfoExperienciaGui",
-	NPC_SCAN_INTERVAL = 0.3,
-	TOGGLE_KEY = Enum.KeyCode.F1, -- tecla de mostrar/ocultar GUI
-	MINIMIZE_HEIGHT = 40, -- altura mínima quando minimizado
-	ANIMATION_TIME = 0.3 -- tempo da animação em segundos
+	NPC_SCAN_INTERVAL = 0.3
 }
 
 -- ===== NPC FOLDER =====
@@ -42,7 +38,8 @@ local state = {
 	lastNPCScan = 0,
 	npcCache = {},
 	connections = {},
-	guiVisible = true
+	guiVisible = true,
+	guiToggleKey = Enum.KeyCode.F1, -- tecla padrão para minimizar/restaurar GUI
 }
 
 -- ===== UTILS =====
@@ -68,23 +65,9 @@ frame.Position = UDim2_new(0.5, -260, 0.5, -130)
 frame.BackgroundColor3 = Color3.fromRGB(25,25,30)
 frame.Active = true
 frame.Draggable = true
-frame.ClipsDescendants = true
-frame.BackgroundTransparency = 0
-
--- ===== MINIMIZE BUTTON =====
-local minimizeBtn = Instance.new("TextButton", frame)
-minimizeBtn.Size = UDim2_new(0, 30, 0, 30)
-minimizeBtn.Position = UDim2_new(1, -35, 0, 5)
-minimizeBtn.Text = "-"
-minimizeBtn.Font = Enum.Font.GothamBold
-minimizeBtn.TextSize = 18
-minimizeBtn.TextColor3 = Color3.new(1,1,1)
-minimizeBtn.BackgroundColor3 = Color3.fromRGB(52,73,94)
-minimizeBtn.AutoButtonColor = true
 
 local title = Instance.new("TextLabel", frame)
-title.Size = UDim2_new(1, -40, 0, 40)
-title.Position = UDim2_new(0, 0, 0, 0)
+title.Size = UDim2_new(1,0,0,40)
 title.BackgroundTransparency = 1
 title.Text = "🔥 AUTOFARM CONTROLLER"
 title.Font = Enum.Font.GothamBold
@@ -116,6 +99,14 @@ speedBox.Font = Enum.Font.GothamBold
 speedBox.TextSize = 12
 speedBox.BackgroundColor3 = Color3.fromRGB(44,62,80)
 speedBox.TextColor3 = Color3.new(1,1,1)
+
+-- ===== BOTÃO PARA ALTERAR TECLA DO GUI =====
+local guiKeyBtn = createButton("GUI key ("..state.guiToggleKey.Name..")", 230)
+local waitingForKey = false
+guiKeyBtn.MouseButton1Click:Connect(function()
+	waitingForKey = true
+	guiKeyBtn.Text = "Press a key..."
+end)
 
 -- ===== NPC CACHE =====
 local function updateNPCCache()
@@ -264,55 +255,29 @@ speedBtn.MouseButton1Click:Connect(function()
 	end
 end)
 
+-- ===== GUI TOGGLE E TECLA CUSTOM =====
+UserInputService.InputBegan:Connect(function(input, processed)
+	if processed then return end
+
+	-- Toggle GUI
+	if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == state.guiToggleKey then
+		state.guiVisible = not state.guiVisible
+		frame.Visible = state.guiVisible
+	end
+
+	-- Redefinir tecla de toggle se estiver aguardando
+	if waitingForKey and input.UserInputType == Enum.UserInputType.Keyboard then
+		state.guiToggleKey = input.KeyCode
+		guiKeyBtn.Text = "GUI key ("..state.guiToggleKey.Name..")"
+		waitingForKey = false
+	end
+end)
+
 player.CharacterAdded:Connect(function(char)
 	task.wait(0.3)
 	if state.godModeEnabled then applyGodMode(char) end
 	if state.speedEnabled then
 		disconnectConnection("speed")
 		state.connections.speed = RunService.Heartbeat:Connect(speedLoop)
-	end
-end)
-
--- ===== TOGGLE GUI COM FADE =====
-local minimized = false
-local normalSize = frame.Size
-local normalTransparency = frame.BackgroundTransparency
-
-local function toggleGuiFade()
-	minimized = not minimized
-	local goalProps = {}
-	if minimized then
-		goalProps.Size = UDim2_new(frame.Size.X.Scale, frame.Size.X.Offset, 0, CONFIG.MINIMIZE_HEIGHT)
-		goalProps.BackgroundTransparency = 1
-		goalProps.TextTransparency = 1
-	else
-		goalProps.Size = normalSize
-		goalProps.BackgroundTransparency = normalTransparency
-		goalProps.TextTransparency = 0
-	end
-
-	-- Tween do tamanho e do fade
-	local tween = TweenService:Create(frame, TweenInfo.new(CONFIG.ANIMATION_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), goalProps)
-	tween:Play()
-
-	-- Tween para cada filho TextLabel/TextButton
-	for _, child in ipairs(frame:GetChildren()) do
-		if child:IsA("TextLabel") or child:IsA("TextButton") or child:IsA("TextBox") then
-			local tTween = TweenService:Create(child, TweenInfo.new(CONFIG.ANIMATION_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = goalProps.TextTransparency or 0})
-			tTween:Play()
-		end
-	end
-
-	state.guiVisible = not minimized
-end
-
--- ===== BOTÃO DE MINIMIZAR =====
-minimizeBtn.MouseButton1Click:Connect(toggleGuiFade)
-
--- ===== TECLA DE TOGGLE =====
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then return end
-	if input.KeyCode == CONFIG.TOGGLE_KEY then
-		toggleGuiFade()
 	end
 end)
