@@ -5,6 +5,7 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
 local TweenService = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local player = Players.LocalPlayer
 if not player then return end
@@ -36,7 +37,7 @@ local state = {
 	killAuraEnabled = false,
 	speedValue = 160,
 	killAuraRadius = 2,
-	killAuraDamageMultiplier = 1, -- multiplicador de dano, 1 = normal
+	killAuraDamageMultiplier = 1,
 	lockedNPC = nil,
 	lastNPCScan = 0,
 	npcCache = {},
@@ -254,7 +255,9 @@ local function speedLoop()
 	end
 end
 
--- ===== KILL AURA =====
+-- ===== KILL AURA COMBATEVENT =====
+local CombatEvent = ReplicatedStorage:WaitForChild("CombatEvent")
+
 local function killAuraLoop()
 	if not state.killAuraEnabled then return end
 	local char = player.Character
@@ -264,29 +267,26 @@ local function killAuraLoop()
 	local closestNPC = nil
 	local closestDist = math.huge
 
-	for _, npc in ipairs(state.npcCache) do
-		local npcRoot = npc.root
+	for _, npcData in ipairs(state.npcCache) do
+		local npcRoot = npcData.root
 		local dist = (npcRoot.Position - root.Position).Magnitude
 		if dist <= state.killAuraRadius and dist < closestDist then
 			closestDist = dist
-			closestNPC = npc
+			closestNPC = npcData
 		end
 	end
 
 	if closestNPC then
+		local model = closestNPC.model
 		local hum = closestNPC.humanoid
+		local isBoss = model:FindFirstChild("Boss") ~= nil
+		local damage = state.killAuraDamageMultiplier
+		if isBoss then damage = math.max(1, damage / 2) end
+
 		if hum and hum.Health > 0 then
-			-- Evita instant kill em bosses
-			local isBoss = closestNPC.model:FindFirstChild("Boss") or false
-			local damage = state.killAuraDamageMultiplier * (isBoss and 10 or 999) -- 10 para bosses, 999 para mobs normais
-			if hum.Health > 0 then
-				-- Detecta se o jogo aceita TakeDamage
-				if hum:FindFirstChild("TakeDamage") then
-					hum:TakeDamage(damage)
-				else
-					hum.Health = math.max(0, hum.Health - damage)
-				end
-			end
+			pcall(function()
+				CombatEvent:FireServer(model, damage)
+			end)
 		end
 	end
 end
