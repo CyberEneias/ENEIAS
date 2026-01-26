@@ -18,7 +18,7 @@ local CONFIG = {
 	GUI_NAME = "InfoExperienciaGui",
 	NPC_SCAN_INTERVAL = 0.3,
 	TOGGLE_KEY = Enum.KeyCode.F1, -- tecla de mostrar/ocultar GUI
-	MINIMIZE_HEIGHT = 40, -- altura do frame quando minimizado
+	MINIMIZE_HEIGHT = 40, -- altura mínima quando minimizado
 	ANIMATION_TIME = 0.3 -- tempo da animação em segundos
 }
 
@@ -68,6 +68,8 @@ frame.Position = UDim2_new(0.5, -260, 0.5, -130)
 frame.BackgroundColor3 = Color3.fromRGB(25,25,30)
 frame.Active = true
 frame.Draggable = true
+frame.ClipsDescendants = true
+frame.BackgroundTransparency = 0
 
 -- ===== MINIMIZE BUTTON =====
 local minimizeBtn = Instance.new("TextButton", frame)
@@ -271,29 +273,46 @@ player.CharacterAdded:Connect(function(char)
 	end
 end)
 
--- ===== TOGGLE GUI COM ANIMAÇÃO =====
+-- ===== TOGGLE GUI COM FADE =====
 local minimized = false
 local normalSize = frame.Size
-local function toggleGuiAnimated()
+local normalTransparency = frame.BackgroundTransparency
+
+local function toggleGuiFade()
 	minimized = not minimized
-	local goal = {}
+	local goalProps = {}
 	if minimized then
-		goal.Size = UDim2_new(frame.Size.X.Scale, frame.Size.X.Offset, 0, CONFIG.MINIMIZE_HEIGHT)
+		goalProps.Size = UDim2_new(frame.Size.X.Scale, frame.Size.X.Offset, 0, CONFIG.MINIMIZE_HEIGHT)
+		goalProps.BackgroundTransparency = 1
+		goalProps.TextTransparency = 1
 	else
-		goal.Size = normalSize
+		goalProps.Size = normalSize
+		goalProps.BackgroundTransparency = normalTransparency
+		goalProps.TextTransparency = 0
 	end
-	local tween = TweenService:Create(frame, TweenInfo.new(CONFIG.ANIMATION_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), goal)
+
+	-- Tween do tamanho e do fade
+	local tween = TweenService:Create(frame, TweenInfo.new(CONFIG.ANIMATION_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), goalProps)
 	tween:Play()
+
+	-- Tween para cada filho TextLabel/TextButton
+	for _, child in ipairs(frame:GetChildren()) do
+		if child:IsA("TextLabel") or child:IsA("TextButton") or child:IsA("TextBox") then
+			local tTween = TweenService:Create(child, TweenInfo.new(CONFIG.ANIMATION_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = goalProps.TextTransparency or 0})
+			tTween:Play()
+		end
+	end
+
 	state.guiVisible = not minimized
 end
 
 -- ===== BOTÃO DE MINIMIZAR =====
-minimizeBtn.MouseButton1Click:Connect(toggleGuiAnimated)
+minimizeBtn.MouseButton1Click:Connect(toggleGuiFade)
 
 -- ===== TECLA DE TOGGLE =====
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
 	if input.KeyCode == CONFIG.TOGGLE_KEY then
-		toggleGuiAnimated()
+		toggleGuiFade()
 	end
 end)
