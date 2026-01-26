@@ -3,6 +3,7 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 local CoreGui = game:GetService("CoreGui")
 
 local player = Players.LocalPlayer
@@ -15,7 +16,10 @@ local CONFIG = {
 	MAX_DISTANCE = 60,
 	UPDATE_INTERVAL = 1,
 	GUI_NAME = "InfoExperienciaGui",
-	NPC_SCAN_INTERVAL = 0.3
+	NPC_SCAN_INTERVAL = 0.3,
+	TOGGLE_KEY = Enum.KeyCode.F1, -- tecla de mostrar/ocultar GUI
+	MINIMIZE_HEIGHT = 40, -- altura do frame quando minimizado
+	ANIMATION_TIME = 0.3 -- tempo da animação em segundos
 }
 
 -- ===== NPC FOLDER =====
@@ -65,8 +69,20 @@ frame.BackgroundColor3 = Color3.fromRGB(25,25,30)
 frame.Active = true
 frame.Draggable = true
 
+-- ===== MINIMIZE BUTTON =====
+local minimizeBtn = Instance.new("TextButton", frame)
+minimizeBtn.Size = UDim2_new(0, 30, 0, 30)
+minimizeBtn.Position = UDim2_new(1, -35, 0, 5)
+minimizeBtn.Text = "-"
+minimizeBtn.Font = Enum.Font.GothamBold
+minimizeBtn.TextSize = 18
+minimizeBtn.TextColor3 = Color3.new(1,1,1)
+minimizeBtn.BackgroundColor3 = Color3.fromRGB(52,73,94)
+minimizeBtn.AutoButtonColor = true
+
 local title = Instance.new("TextLabel", frame)
-title.Size = UDim2_new(1,0,0,40)
+title.Size = UDim2_new(1, -40, 0, 40)
+title.Position = UDim2_new(0, 0, 0, 0)
 title.BackgroundTransparency = 1
 title.Text = "🔥 AUTOFARM CONTROLLER"
 title.Font = Enum.Font.GothamBold
@@ -252,5 +268,32 @@ player.CharacterAdded:Connect(function(char)
 	if state.speedEnabled then
 		disconnectConnection("speed")
 		state.connections.speed = RunService.Heartbeat:Connect(speedLoop)
+	end
+end)
+
+-- ===== TOGGLE GUI COM ANIMAÇÃO =====
+local minimized = false
+local normalSize = frame.Size
+local function toggleGuiAnimated()
+	minimized = not minimized
+	local goal = {}
+	if minimized then
+		goal.Size = UDim2_new(frame.Size.X.Scale, frame.Size.X.Offset, 0, CONFIG.MINIMIZE_HEIGHT)
+	else
+		goal.Size = normalSize
+	end
+	local tween = TweenService:Create(frame, TweenInfo.new(CONFIG.ANIMATION_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), goal)
+	tween:Play()
+	state.guiVisible = not minimized
+end
+
+-- ===== BOTÃO DE MINIMIZAR =====
+minimizeBtn.MouseButton1Click:Connect(toggleGuiAnimated)
+
+-- ===== TECLA DE TOGGLE =====
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.KeyCode == CONFIG.TOGGLE_KEY then
+		toggleGuiAnimated()
 	end
 end)
