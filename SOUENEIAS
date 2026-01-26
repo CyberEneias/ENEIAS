@@ -1,4 +1,4 @@
--- ===== AUTOFARM ULTRA-LEVE + GOD MODE + SPEED + INFINITE JUMP =====
+-- ===== AUTOFARM ULTRA-LEVE + GOD MODE + SPEED + INFINITE JUMP + KILL AURA =====
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -14,9 +14,8 @@ local CONFIG = {
 	BACK_DISTANCE = 3.5,
 	HEIGHT_OFFSET = 2.5,
 	MAX_DISTANCE = 60,
-	UPDATE_INTERVAL = 1,
-	GUI_NAME = "InfoExperienciaGui",
-	NPC_SCAN_INTERVAL = 0.3
+	NPC_SCAN_INTERVAL = 0.3,
+	GUI_NAME = "InfoExperienciaGui"
 }
 
 -- ===== NPC FOLDER =====
@@ -34,7 +33,10 @@ local state = {
 	infiniteJumpEnabled = false,
 	speedEnabled = false,
 	godModeEnabled = false,
+	killAuraEnabled = false,
 	speedValue = 160,
+	killAuraRadius = 2,
+	killAuraDamageMultiplier = 1, -- multiplicador de dano, 1 = normal
 	lockedNPC = nil,
 	lastNPCScan = 0,
 	npcCache = {},
@@ -61,8 +63,8 @@ gui.Name = CONFIG.GUI_NAME
 gui.ResetOnSpawn = false
 
 local frame = Instance.new("Frame", gui)
-frame.Size = UDim2_new(0, 560, 0, 350)
-frame.Position = UDim2_new(0.5, -280, 0.5, -175)
+frame.Size = UDim2_new(0, 580, 0, 400)
+frame.Position = UDim2_new(0.5, -290, 0.5, -200)
 frame.BackgroundColor3 = Color3.fromRGB(35,35,40)
 frame.Active = true
 frame.Draggable = true
@@ -70,15 +72,6 @@ frame.BorderSizePixel = 0
 
 local frameCorner = Instance.new("UICorner", frame)
 frameCorner.CornerRadius = UDim.new(0, 12)
-
-local frameShadow = Instance.new("Frame", frame)
-frameShadow.Size = UDim2_new(1,10,1,10)
-frameShadow.Position = UDim2_new(0,-5,0,-5)
-frameShadow.BackgroundColor3 = Color3.fromRGB(0,0,0)
-frameShadow.BackgroundTransparency = 0.85
-frameShadow.ZIndex = 0
-local shadowCorner = Instance.new("UICorner", frameShadow)
-shadowCorner.CornerRadius = UDim.new(0, 12)
 
 local title = Instance.new("TextLabel", frame)
 title.Size = UDim2_new(1,0,0,50)
@@ -121,11 +114,14 @@ local function createButton(text, y, width)
 	return b
 end
 
+-- ===== BOTÕES =====
 local autofarmBtn = createButton("🤖 Autofarm: OFF", 60)
 local godBtn      = createButton("🛡️ God Mode: OFF", 120)
 local jumpBtn     = createButton("🚀 Infinite Jump: OFF", 180)
 local speedBtn    = createButton("💨 Speed: OFF", 240)
+local killAuraBtn = createButton("⚔️ Kill Aura: OFF", 300)
 
+-- ===== CONTROLES =====
 local speedBox = Instance.new("TextBox", frame)
 speedBox.Size = UDim2_new(0, 100, 0, 35)
 speedBox.Position = UDim2_new(1, -130, 0, 245)
@@ -138,10 +134,21 @@ speedBox.PlaceholderText = "Speed"
 local speedCorner = Instance.new("UICorner", speedBox)
 speedCorner.CornerRadius = UDim.new(0,6)
 
--- ===== BOTÃO PARA ALTERAR TECLA DO GUI =====
-local guiKeyBtn = createButton("GUI key ("..state.guiToggleKey.Name..")", 300, 260)
-guiKeyBtn.Position = UDim2_new(0, 20, 0, 300)
+local kaRadiusBox = Instance.new("TextBox", frame)
+kaRadiusBox.Size = UDim2_new(0, 100, 0, 35)
+kaRadiusBox.Position = UDim2_new(1, -130, 0, 305)
+kaRadiusBox.Text = tostring(state.killAuraRadius)
+kaRadiusBox.Font = Enum.Font.GothamBold
+kaRadiusBox.TextSize = 14
+kaRadiusBox.BackgroundColor3 = Color3.fromRGB(50,70,90)
+kaRadiusBox.TextColor3 = Color3.new(1,1,1)
+kaRadiusBox.PlaceholderText = "KA Radius"
+local kaCorner = Instance.new("UICorner", kaRadiusBox)
+kaCorner.CornerRadius = UDim.new(0,6)
 
+-- ===== GUI KEY =====
+local guiKeyBtn = createButton("GUI key ("..state.guiToggleKey.Name..")", 350, 260)
+guiKeyBtn.Position = UDim2_new(0, 20, 0, 350)
 local waitingForKey = false
 guiKeyBtn.MouseButton1Click:Connect(function()
 	waitingForKey = true
@@ -247,6 +254,43 @@ local function speedLoop()
 	end
 end
 
+-- ===== KILL AURA =====
+local function killAuraLoop()
+	if not state.killAuraEnabled then return end
+	local char = player.Character
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	if not root then return end
+
+	local closestNPC = nil
+	local closestDist = math.huge
+
+	for _, npc in ipairs(state.npcCache) do
+		local npcRoot = npc.root
+		local dist = (npcRoot.Position - root.Position).Magnitude
+		if dist <= state.killAuraRadius and dist < closestDist then
+			closestDist = dist
+			closestNPC = npc
+		end
+	end
+
+	if closestNPC then
+		local hum = closestNPC.humanoid
+		if hum and hum.Health > 0 then
+			-- Evita instant kill em bosses
+			local isBoss = closestNPC.model:FindFirstChild("Boss") or false
+			local damage = state.killAuraDamageMultiplier * (isBoss and 10 or 999) -- 10 para bosses, 999 para mobs normais
+			if hum.Health > 0 then
+				-- Detecta se o jogo aceita TakeDamage
+				if hum:FindFirstChild("TakeDamage") then
+					hum:TakeDamage(damage)
+				else
+					hum.Health = math.max(0, hum.Health - damage)
+				end
+			end
+		end
+	end
+end
+
 -- ===== BUTTONS =====
 autofarmBtn.MouseButton1Click:Connect(function()
 	state.autofarmEnabled = not state.autofarmEnabled
@@ -295,21 +339,33 @@ speedBtn.MouseButton1Click:Connect(function()
 	end
 end)
 
--- ===== GUI TOGGLE E TECLA CUSTOM =====
+killAuraBtn.MouseButton1Click:Connect(function()
+	state.killAuraEnabled = not state.killAuraEnabled
+	killAuraBtn.Text = state.killAuraEnabled and "⚔️ Kill Aura: ON" or "⚔️ Kill Aura: OFF"
+	if state.killAuraEnabled then
+		state.killAuraRadius = tonumber(kaRadiusBox.Text) or state.killAuraRadius
+		disconnectConnection("killAura")
+		state.connections.killAura = RunService.Heartbeat:Connect(killAuraLoop)
+	else
+		disconnectConnection("killAura")
+	end
+end)
+
+-- ===== GUI TOGGLE & KEYBIND =====
 UserInputService.InputBegan:Connect(function(input, processed)
 	if processed then return end
 
-	-- Toggle GUI
-	if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == state.guiToggleKey then
-		state.guiVisible = not state.guiVisible
-		frame.Visible = state.guiVisible
-	end
+	if input.UserInputType == Enum.UserInputType.Keyboard then
+		if input.KeyCode == state.guiToggleKey then
+			state.guiVisible = not state.guiVisible
+			frame.Visible = state.guiVisible
+		end
 
-	-- Redefinir tecla de toggle se estiver aguardando
-	if waitingForKey and input.UserInputType == Enum.UserInputType.Keyboard then
-		state.guiToggleKey = input.KeyCode
-		guiKeyBtn.Text = "GUI key ("..state.guiToggleKey.Name..")"
-		waitingForKey = false
+		if waitingForKey then
+			state.guiToggleKey = input.KeyCode
+			guiKeyBtn.Text = "GUI key ("..state.guiToggleKey.Name..")"
+			waitingForKey = false
+		end
 	end
 end)
 
