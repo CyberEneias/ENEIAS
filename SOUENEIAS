@@ -377,3 +377,55 @@ player.CharacterAdded:Connect(function(char)
 		state.connections.speed = RunService.Heartbeat:Connect(speedLoop)
 	end
 end)
+-- ===== KILLAURA LEVE =====
+state.killauraEnabled = false
+state.killauraCooldown = 0.25-- segundos entre ataques
+state.lastKillaura = 0
+
+-- Cria botão no GUI
+local killauraBtn = createButton("⚔️ Killaura: OFF", 180)
+killauraBtn.Position = UDim2_new(0, 300, 0, 60)
+
+killauraBtn.MouseButton1Click:Connect(function()
+	state.killauraEnabled = not state.killauraEnabled
+	killauraBtn.Text = state.killauraEnabled and "⚔️ Killaura: ON" or "⚔️ Killaura: OFF"
+end)
+
+-- Função para atacar NPC (leve)
+local function attackNPC(npc)
+	if not npc or not npc.Parent then return end
+	local char = player.Character
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+	if not root or not npcRoot then return end
+
+	-- Aproxima levemente do NPC
+	root.CFrame = CFrame_new(
+		npcRoot.Position - npcRoot.CFrame.LookVector * CONFIG.BACK_DISTANCE + Vector3_new(0, CONFIG.HEIGHT_OFFSET, 0)
+	)
+
+	-- Ativa ataque via ferramenta (caso tenha)
+	local tool = char:FindFirstChildOfClass("Tool")
+	if tool then
+		-- tenta encontrar um RemoteEvent dentro da tool
+		for _, child in ipairs(tool:GetChildren()) do
+			if child:IsA("RemoteEvent") then
+				child:FireServer(npc)
+				break
+			end
+		end
+	end
+end
+
+-- Loop do Killaura
+state.connections.killaura = RunService.Heartbeat:Connect(function()
+	if not state.killauraEnabled then return end
+	if tick() - state.lastKillaura < state.killauraCooldown then return end
+
+	-- Pega NPC mais próximo
+	local npc = findClosestNPC()
+	if npc then
+		attackNPC(npc)
+		state.lastKillaura = tick()
+	end
+end)
