@@ -4,6 +4,7 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
+local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 if not player then return end
@@ -39,7 +40,7 @@ local state = {
 	npcCache = {},
 	connections = {},
 	guiVisible = true,
-	guiToggleKey = Enum.KeyCode.F1, -- tecla padrão para minimizar/restaurar GUI
+	guiToggleKey = Enum.KeyCode.F1,
 }
 
 -- ===== UTILS =====
@@ -60,48 +61,87 @@ gui.Name = CONFIG.GUI_NAME
 gui.ResetOnSpawn = false
 
 local frame = Instance.new("Frame", gui)
-frame.Size = UDim2_new(0, 520, 0, 260)
-frame.Position = UDim2_new(0.5, -260, 0.5, -130)
-frame.BackgroundColor3 = Color3.fromRGB(25,25,30)
+frame.Size = UDim2_new(0, 560, 0, 350)
+frame.Position = UDim2_new(0.5, -280, 0.5, -175)
+frame.BackgroundColor3 = Color3.fromRGB(35,35,40)
 frame.Active = true
 frame.Draggable = true
+frame.BorderSizePixel = 0
+
+local frameCorner = Instance.new("UICorner", frame)
+frameCorner.CornerRadius = UDim.new(0, 12)
+
+local frameShadow = Instance.new("Frame", frame)
+frameShadow.Size = UDim2_new(1,10,1,10)
+frameShadow.Position = UDim2_new(0,-5,0,-5)
+frameShadow.BackgroundColor3 = Color3.fromRGB(0,0,0)
+frameShadow.BackgroundTransparency = 0.85
+frameShadow.ZIndex = 0
+local shadowCorner = Instance.new("UICorner", frameShadow)
+shadowCorner.CornerRadius = UDim.new(0, 12)
 
 local title = Instance.new("TextLabel", frame)
-title.Size = UDim2_new(1,0,0,40)
+title.Size = UDim2_new(1,0,0,50)
 title.BackgroundTransparency = 1
 title.Text = "🔥 AUTOFARM CONTROLLER"
 title.Font = Enum.Font.GothamBold
-title.TextSize = 18
+title.TextSize = 22
 title.TextColor3 = Color3.fromRGB(235,235,235)
 
-local function createButton(text, y)
+-- Função para criar botões estilizados
+local function createButton(text, y, width)
+	width = width or 220
 	local b = Instance.new("TextButton", frame)
-	b.Size = UDim2_new(0, 220, 0, 40)
+	b.Size = UDim2_new(0, width, 0, 45)
 	b.Position = UDim2_new(0, 20, 0, y)
-	b.BackgroundColor3 = Color3.fromRGB(52,73,94)
+	b.BackgroundColor3 = Color3.fromRGB(60,80,100)
 	b.TextColor3 = Color3.new(1,1,1)
 	b.Font = Enum.Font.GothamBold
-	b.TextSize = 14
+	b.TextSize = 15
 	b.Text = text
+
+	local corner = Instance.new("UICorner", b)
+	corner.CornerRadius = UDim.new(0,8)
+
+	-- Gradiente
+	local grad = Instance.new("UIGradient", b)
+	grad.Color = ColorSequence.new{
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(75,95,115)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(60,80,100))
+	}
+
+	-- Hover efeito
+	b.MouseEnter:Connect(function()
+		TweenService:Create(b, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(90,110,130)}):Play()
+	end)
+	b.MouseLeave:Connect(function()
+		TweenService:Create(b, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(60,80,100)}):Play()
+	end)
+
 	return b
 end
 
-local autofarmBtn = createButton("🤖 Autofarm: OFF", 50)
-local godBtn      = createButton("🛡️ God Mode: OFF", 95)
-local jumpBtn     = createButton("🚀 Infinite Jump: OFF", 140)
-local speedBtn    = createButton("💨 Speed: OFF", 185)
+local autofarmBtn = createButton("🤖 Autofarm: OFF", 60)
+local godBtn      = createButton("🛡️ God Mode: OFF", 120)
+local jumpBtn     = createButton("🚀 Infinite Jump: OFF", 180)
+local speedBtn    = createButton("💨 Speed: OFF", 240)
 
 local speedBox = Instance.new("TextBox", frame)
-speedBox.Size = UDim2_new(0, 80, 0, 30)
-speedBox.Position = UDim2_new(1, -100, 0, 190)
+speedBox.Size = UDim2_new(0, 100, 0, 35)
+speedBox.Position = UDim2_new(1, -130, 0, 245)
 speedBox.Text = tostring(state.speedValue)
 speedBox.Font = Enum.Font.GothamBold
-speedBox.TextSize = 12
-speedBox.BackgroundColor3 = Color3.fromRGB(44,62,80)
+speedBox.TextSize = 14
+speedBox.BackgroundColor3 = Color3.fromRGB(50,70,90)
 speedBox.TextColor3 = Color3.new(1,1,1)
+speedBox.PlaceholderText = "Speed"
+local speedCorner = Instance.new("UICorner", speedBox)
+speedCorner.CornerRadius = UDim.new(0,6)
 
 -- ===== BOTÃO PARA ALTERAR TECLA DO GUI =====
-local guiKeyBtn = createButton("GUI key ("..state.guiToggleKey.Name..")", 230)
+local guiKeyBtn = createButton("GUI key ("..state.guiToggleKey.Name..")", 300, 260)
+guiKeyBtn.Position = UDim2_new(0, 20, 0, 300)
+
 local waitingForKey = false
 guiKeyBtn.MouseButton1Click:Connect(function()
 	waitingForKey = true
