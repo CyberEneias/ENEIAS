@@ -1,5 +1,6 @@
--- ===== AUTOFARM ULTRA-LEVE + GOD MODE + SPEED + INFINITE JUMP + KILLAURA FIRE SERVER =====
+-- ===== AUTOFARM + GOD MODE + SPEED + INFINITE JUMP + CLEAN KILL AURA =====
 
+-- ===== SERVICES =====
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -12,335 +13,237 @@ if not player then return end
 
 -- ===== CONFIG =====
 local CONFIG = {
+	GUI_NAME = "CleanKillAuraGui",
+
+	-- Kill Aura
+	DAMAGE = 8,
+	STUN = 0.65,
+	RANGE = 6,
+	SIZE = Vector3.new(6,5,6),
+	ATTACK_DELAY = 0.25,
+
+	-- Autofarm
 	BACK_DISTANCE = 3.5,
 	HEIGHT_OFFSET = 2.5,
 	MAX_DISTANCE = 60,
-	NPC_SCAN_INTERVAL = 0.3,
-	GUI_NAME = "InfoExperienciaGui",
-	COMBO_DELAY = 0.25, -- delay entre ataques para simular M1
-	DAMAGE = 8,
-	STUN = 0.65,
-	RANGE = 5,
-	SIZE = Vector3.new(6.5, 5, 6)
+	NPC_SCAN_INTERVAL = 0.3
 }
 
--- ===== NPC FOLDER =====
+-- ===== FOLDERS / REMOTES =====
 local AliveFolder = workspace:WaitForChild("Alive")
-
--- ===== COMBAT REMOTE =====
 local CombatEvent = ReplicatedStorage:WaitForChild("Events"):WaitForChild("CombatEvent")
-
--- ===== CACHE =====
-local Vector3_new = Vector3.new
-local Vector3_zero = Vector3.zero
-local CFrame_new = CFrame.new
-local UDim2_new = UDim2.new
 
 -- ===== STATE =====
 local state = {
-	autofarmEnabled = false,
-	infiniteJumpEnabled = false,
-	speedEnabled = false,
-	godModeEnabled = false,
-	killauraEnabled = false,
+	autofarm = false,
+	god = false,
+	speed = false,
+	infiniteJump = false,
+	killaura = false,
+
 	speedValue = 160,
-	lockedNPC = nil,
-	lastNPCScan = 0,
+	lastAttack = 0,
 	npcCache = {},
-	connections = {},
-	guiVisible = true,
-	guiToggleKey = Enum.KeyCode.F1,
-	lastCombo = 0
+	lastScan = 0,
+	connections = {}
 }
 
 -- ===== UTILS =====
-local function disconnectConnection(name)
+local function disconnect(name)
 	if state.connections[name] then
 		state.connections[name]:Disconnect()
 		state.connections[name] = nil
 	end
 end
 
--- ===== CLEAN GUI =====
-local oldGui = CoreGui:FindFirstChild(CONFIG.GUI_NAME)
-if oldGui then oldGui:Destroy() end
+-- ===== GUI CLEAN =====
+local old = CoreGui:FindFirstChild(CONFIG.GUI_NAME)
+if old then old:Destroy() end
 
 -- ===== GUI =====
-local gui = Instance.new("ScreenGui")
+local gui = Instance.new("ScreenGui", CoreGui)
 gui.Name = CONFIG.GUI_NAME
 gui.ResetOnSpawn = false
-gui.Parent = CoreGui
 
 local frame = Instance.new("Frame", gui)
-frame.Size = UDim2_new(0, 560, 0, 400)
-frame.Position = UDim2_new(0.5, -280, 0.5, -200)
+frame.Size = UDim2.new(0,420,0,360)
+frame.Position = UDim2.new(0.5,-210,0.5,-180)
 frame.BackgroundColor3 = Color3.fromRGB(35,35,40)
 frame.Active = true
 frame.Draggable = true
 frame.BorderSizePixel = 0
-
-local frameCorner = Instance.new("UICorner", frame)
-frameCorner.CornerRadius = UDim.new(0, 12)
-
-local frameShadow = Instance.new("Frame", frame)
-frameShadow.Size = UDim2_new(1,10,1,10)
-frameShadow.Position = UDim2_new(0,-5,0,-5)
-frameShadow.BackgroundColor3 = Color3.fromRGB(0,0,0)
-frameShadow.BackgroundTransparency = 0.85
-frameShadow.ZIndex = 0
-local shadowCorner = Instance.new("UICorner", frameShadow)
-shadowCorner.CornerRadius = UDim.new(0, 12)
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0,12)
 
 local title = Instance.new("TextLabel", frame)
-title.Size = UDim2_new(1,0,0,50)
+title.Size = UDim2.new(1,0,0,45)
 title.BackgroundTransparency = 1
-title.Text = "🔥 AUTOFARM CONTROLLER"
+title.Text = "🔥 CLEAN COMBAT CONTROLLER"
 title.Font = Enum.Font.GothamBold
-title.TextSize = 22
+title.TextSize = 20
 title.TextColor3 = Color3.fromRGB(235,235,235)
 
--- Função para criar botões estilizados
-local function createButton(text, y, width)
-	width = width or 220
+local function createButton(text,y)
 	local b = Instance.new("TextButton", frame)
-	b.Size = UDim2_new(0, width, 0, 45)
-	b.Position = UDim2_new(0, 20, 0, y)
-	b.BackgroundColor3 = Color3.fromRGB(60,80,100)
-	b.TextColor3 = Color3.new(1,1,1)
-	b.Font = Enum.Font.GothamBold
-	b.TextSize = 15
+	b.Size = UDim2.new(0,200,0,42)
+	b.Position = UDim2.new(0,20,0,y)
 	b.Text = text
-
-	local corner = Instance.new("UICorner", b)
-	corner.CornerRadius = UDim.new(0,8)
-
-	local grad = Instance.new("UIGradient", b)
-	grad.Color = ColorSequence.new{
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(75,95,115)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(60,80,100))
-	}
-
-	b.MouseEnter:Connect(function()
-		TweenService:Create(b, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(90,110,130)}):Play()
-	end)
-	b.MouseLeave:Connect(function()
-		TweenService:Create(b, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(60,80,100)}):Play()
-	end)
-
+	b.Font = Enum.Font.GothamBold
+	b.TextSize = 14
+	b.TextColor3 = Color3.new(1,1,1)
+	b.BackgroundColor3 = Color3.fromRGB(60,80,100)
+	Instance.new("UICorner", b).CornerRadius = UDim.new(0,8)
 	return b
 end
 
--- ===== BOTÕES =====
 local autofarmBtn = createButton("🤖 Autofarm: OFF", 60)
-local godBtn      = createButton("🛡️ God Mode: OFF", 120)
-local jumpBtn     = createButton("🚀 Infinite Jump: OFF", 180)
-local speedBtn    = createButton("💨 Speed: OFF", 240)
-local killauraBtn = createButton("⚔️ Kill Aura: OFF", 300)
-
-local speedBox = Instance.new("TextBox", frame)
-speedBox.Size = UDim2_new(0, 100, 0, 35)
-speedBox.Position = UDim2_new(1, -130, 0, 245)
-speedBox.Text = tostring(state.speedValue)
-speedBox.Font = Enum.Font.GothamBold
-speedBox.TextSize = 14
-speedBox.BackgroundColor3 = Color3.fromRGB(50,70,90)
-speedBox.TextColor3 = Color3.new(1,1,1)
-speedBox.PlaceholderText = "Speed"
-local speedCorner = Instance.new("UICorner", speedBox)
-speedCorner.CornerRadius = UDim.new(0,6)
-
-local guiKeyBtn = createButton("GUI key ("..state.guiToggleKey.Name..")", 350, 260)
-local waitingForKey = false
-guiKeyBtn.MouseButton1Click:Connect(function()
-	waitingForKey = true
-	guiKeyBtn.Text = "Press a key..."
-end)
+local godBtn      = createButton("🛡️ God Mode: OFF", 110)
+local jumpBtn     = createButton("🚀 Infinite Jump: OFF", 160)
+local speedBtn    = createButton("💨 Speed: OFF", 210)
+local killauraBtn = createButton("⚔️ Kill Aura: OFF", 260)
 
 -- ===== NPC CACHE =====
-local function updateNPCCache()
+local function updateNPCs()
 	table.clear(state.npcCache)
+
 	local char = player.Character
 	local root = char and char:FindFirstChild("HumanoidRootPart")
 	if not root then return end
-	for _, npc in ipairs(AliveFolder:GetChildren()) do
+
+	for _,npc in ipairs(AliveFolder:GetChildren()) do
 		if npc:IsA("Model") and npc ~= char then
-			local hum = npc:FindFirstChild("Humanoid")
-			local npcRoot = npc:FindFirstChild("HumanoidRootPart")
-			if hum and npcRoot and hum.Health > 0 then
-				local dist = (root.Position - npcRoot.Position).Magnitude
+			local hum = npc:FindFirstChildOfClass("Humanoid")
+			local r = npc:FindFirstChild("HumanoidRootPart")
+			if hum and r and hum.Health > 0 then
+				local dist = (root.Position - r.Position).Magnitude
 				if dist <= CONFIG.MAX_DISTANCE then
-					table.insert(state.npcCache, {model=npc, root=npcRoot, humanoid=hum, distance=dist})
+					table.insert(state.npcCache,{
+						model = npc,
+						root = r,
+						hum = hum,
+						dist = dist
+					})
 				end
 			end
 		end
 	end
-	table.sort(state.npcCache, function(a,b) return a.distance < b.distance end)
+
+	table.sort(state.npcCache,function(a,b)
+		return a.dist < b.dist
+	end)
 end
 
-local function findClosestNPC()
-	if tick() - state.lastNPCScan > CONFIG.NPC_SCAN_INTERVAL then
-		updateNPCCache()
-		state.lastNPCScan = tick()
+local function getClosestNPC()
+	if tick() - state.lastScan > CONFIG.NPC_SCAN_INTERVAL then
+		updateNPCs()
+		state.lastScan = tick()
 	end
-	return state.npcCache[1] and state.npcCache[1].model
+	return state.npcCache[1]
 end
 
 -- ===== AUTOFARM LOOP =====
 local function autofarmLoop()
-	if not state.autofarmEnabled then return end
+	if not state.autofarm then return end
 	local char = player.Character
 	local root = char and char:FindFirstChild("HumanoidRootPart")
 	if not root then return end
-	if not state.lockedNPC or not state.lockedNPC.Parent then
-		state.lockedNPC = findClosestNPC()
-	end
-	local npc = state.lockedNPC
-	if not npc then return end
-	local npcRoot = npc:FindFirstChild("HumanoidRootPart")
-	if not npcRoot then return end
-	root.AssemblyLinearVelocity = Vector3_zero
-	root.AssemblyAngularVelocity = Vector3_zero
-	root.CFrame = CFrame_new(
-		npcRoot.Position - npcRoot.CFrame.LookVector * CONFIG.BACK_DISTANCE
-		+ Vector3_new(0, CONFIG.HEIGHT_OFFSET, 0)
-	)
+
+	local npcData = getClosestNPC()
+	if not npcData then return end
+
+	root.CFrame =
+		npcData.root.CFrame *
+		CFrame.new(0, CONFIG.HEIGHT_OFFSET, CONFIG.BACK_DISTANCE)
+end
+
+-- ===== CLEAN KILL AURA (RECRIAÇÃO) =====
+local function killAuraLoop()
+	if not state.killaura then return end
+	if tick() - state.lastAttack < CONFIG.ATTACK_DELAY then return end
+
+	local npcData = getClosestNPC()
+	if not npcData then return end
+
+	local attackData = {
+		HitPart = npcData.root,
+		HitPos = npcData.root.Position,
+		Damage = CONFIG.DAMAGE,
+		Stun = CONFIG.STUN,
+		Range = CONFIG.RANGE,
+		Size = CONFIG.SIZE,
+		AttackType = "M1",
+		ComboIndex = 1
+	}
+
+	CombatEvent:FireServer(attackData)
+	state.lastAttack = tick()
 end
 
 -- ===== GOD MODE =====
-local function applyGodMode(char)
-	local hum = char and char:FindFirstChildOfClass("Humanoid")
-	if not hum then return end
-	hum.BreakJointsOnDeath = false
-	hum.RequiresNeck = false
-	hum.MaxHealth = math.huge
-	hum.Health = hum.MaxHealth
-	disconnectConnection("god")
-	state.connections.god = hum.HealthChanged:Connect(function()
-		if state.godModeEnabled then
+RunService.Heartbeat:Connect(function()
+	if state.god then
+		local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+		if hum then
+			hum.MaxHealth = math.huge
 			hum.Health = hum.MaxHealth
 		end
-	end)
-end
-
-RunService.Heartbeat:Connect(function()
-	if state.godModeEnabled then
-		local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-		if hum then hum.Health = hum.MaxHealth end
 	end
 end)
 
 -- ===== SPEED =====
 local function speedLoop()
-	if not state.speedEnabled then return end
+	if not state.speed then return end
 	local char = player.Character
-	local root = char and char:FindFirstChild("HumanoidRootPart")
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
-	if root and hum and hum.MoveDirection.Magnitude > 0 then
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	if hum and root and hum.MoveDirection.Magnitude > 0 then
 		root.AssemblyLinearVelocity =
 			hum.MoveDirection.Unit * state.speedValue +
-			Vector3_new(0, root.AssemblyLinearVelocity.Y, 0)
+			Vector3.new(0, root.AssemblyLinearVelocity.Y, 0)
 	end
 end
 
--- ===== KILLAURA FIRE SERVER =====
-local function killAuraLoop()
-	if not state.killauraEnabled then return end
-	if tick() - state.lastCombo < CONFIG.COMBO_DELAY then return end
-
-	local npc = findClosestNPC()
-	if npc and npc.Parent then
-		local npcRoot = npc:FindFirstChild("HumanoidRootPart")
-		if npcRoot then
-			local attackData = {
-				HitPart = npcRoot,
-				HitPos = npcRoot.Position,
-				Damage = CONFIG.DAMAGE,
-				Stun = CONFIG.STUN,
-				Range = CONFIG.RANGE,
-				Size = CONFIG.SIZE,
-				AttackType = "M1",
-				ComboIndex = 1
-			}
-			CombatEvent:FireServer(attackData)
-			state.lastCombo = tick()
-		end
-	end
-end
-
-state.connections.killaura = RunService.Heartbeat:Connect(killAuraLoop)
-
--- ===== BUTTON FUNCTIONS =====
+-- ===== BUTTONS =====
 autofarmBtn.MouseButton1Click:Connect(function()
-	state.autofarmEnabled = not state.autofarmEnabled
-	autofarmBtn.Text = state.autofarmEnabled and "🤖 Autofarm: ON" or "🤖 Autofarm: OFF"
-	if state.autofarmEnabled then
-		disconnectConnection("autofarm")
+	state.autofarm = not state.autofarm
+	autofarmBtn.Text = state.autofarm and "🤖 Autofarm: ON" or "🤖 Autofarm: OFF"
+	disconnect("autofarm")
+	if state.autofarm then
 		state.connections.autofarm = RunService.Heartbeat:Connect(autofarmLoop)
-	else
-		disconnectConnection("autofarm")
 	end
 end)
 
 godBtn.MouseButton1Click:Connect(function()
-	state.godModeEnabled = not state.godModeEnabled
-	godBtn.Text = state.godModeEnabled and "🛡️ God Mode: ON" or "🛡️ God Mode: OFF"
-	if state.godModeEnabled then
-		applyGodMode(player.Character)
-	else
-		disconnectConnection("god")
-	end
+	state.god = not state.god
+	godBtn.Text = state.god and "🛡️ God Mode: ON" or "🛡️ God Mode: OFF"
 end)
 
 jumpBtn.MouseButton1Click:Connect(function()
-	state.infiniteJumpEnabled = not state.infiniteJumpEnabled
-	jumpBtn.Text = state.infiniteJumpEnabled and "🚀 Infinite Jump: ON" or "🚀 Infinite Jump: OFF"
+	state.infiniteJump = not state.infiniteJump
+	jumpBtn.Text = state.infiniteJump and "🚀 Infinite Jump: ON" or "🚀 Infinite Jump: OFF"
 end)
 
 speedBtn.MouseButton1Click:Connect(function()
-	state.speedEnabled = not state.speedEnabled
-	speedBtn.Text = state.speedEnabled and "💨 Speed: ON" or "💨 Speed: OFF"
-	if state.speedEnabled then
-		state.speedValue = tonumber(speedBox.Text) or state.speedValue
-		disconnectConnection("speed")
+	state.speed = not state.speed
+	speedBtn.Text = state.speed and "💨 Speed: ON" or "💨 Speed: OFF"
+	disconnect("speed")
+	if state.speed then
 		state.connections.speed = RunService.Heartbeat:Connect(speedLoop)
-	else
-		disconnectConnection("speed")
 	end
 end)
 
 killauraBtn.MouseButton1Click:Connect(function()
-	state.killauraEnabled = not state.killauraEnabled
-	killauraBtn.Text = state.killauraEnabled and "⚔️ Kill Aura: ON" or "⚔️ Kill Aura: OFF"
-end)
-
--- ===== GUI TOGGLE & TECLA CUSTOM =====
-UserInputService.InputBegan:Connect(function(input, processed)
-	if processed then return end
-	if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == state.guiToggleKey then
-		state.guiVisible = not state.guiVisible
-		frame.Visible = state.guiVisible
-	end
-	if waitingForKey and input.UserInputType == Enum.UserInputType.Keyboard then
-		state.guiToggleKey = input.KeyCode
-		guiKeyBtn.Text = "GUI key ("..state.guiToggleKey.Name..")"
-		waitingForKey = false
-	end
+	state.killaura = not state.killaura
+	killauraBtn.Text = state.killaura and "⚔️ Kill Aura: ON" or "⚔️ Kill Aura: OFF"
 end)
 
 -- ===== INFINITE JUMP =====
 UserInputService.JumpRequest:Connect(function()
-	if state.infiniteJumpEnabled then
+	if state.infiniteJump then
 		local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 		if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
 	end
 end)
 
--- ===== CHARACTER ADDED =====
-player.CharacterAdded:Connect(function(char)
-	task.wait(0.3)
-	if state.godModeEnabled then applyGodMode(char) end
-	if state.speedEnabled then
-		disconnectConnection("speed")
-		state.connections.speed = RunService.Heartbeat:Connect(speedLoop)
-	end
-end)
+-- ===== MAIN LOOPS =====
+RunService.Heartbeat:Connect(killAuraLoop)
+
