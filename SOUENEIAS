@@ -5,7 +5,6 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
 local TweenService = game:GetService("TweenService")
-local VirtualUser = game:GetService("VirtualUser")
 
 local player = Players.LocalPlayer
 if not player then return end
@@ -15,6 +14,7 @@ local CONFIG = {
 	BACK_DISTANCE = 3.5,
 	HEIGHT_OFFSET = 2.5,
 	MAX_DISTANCE = 60,
+	UPDATE_INTERVAL = 1,
 	GUI_NAME = "InfoExperienciaGui",
 	NPC_SCAN_INTERVAL = 0.3
 }
@@ -31,10 +31,9 @@ local UDim2_new = UDim2.new
 -- ===== STATE =====
 local state = {
 	autofarmEnabled = false,
-	infiniteJumpEnabled = false, -- <<<<<< INFINITE JUMP STATE
+	infiniteJumpEnabled = false,
 	speedEnabled = false,
 	godModeEnabled = false,
-	macroM1Enabled = false,
 	speedValue = 160,
 	lockedNPC = nil,
 	lastNPCScan = 0,
@@ -68,7 +67,18 @@ frame.BackgroundColor3 = Color3.fromRGB(35,35,40)
 frame.Active = true
 frame.Draggable = true
 frame.BorderSizePixel = 0
-Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 12)
+
+local frameCorner = Instance.new("UICorner", frame)
+frameCorner.CornerRadius = UDim.new(0, 12)
+
+local frameShadow = Instance.new("Frame", frame)
+frameShadow.Size = UDim2_new(1,10,1,10)
+frameShadow.Position = UDim2_new(0,-5,0,-5)
+frameShadow.BackgroundColor3 = Color3.fromRGB(0,0,0)
+frameShadow.BackgroundTransparency = 0.85
+frameShadow.ZIndex = 0
+local shadowCorner = Instance.new("UICorner", frameShadow)
+shadowCorner.CornerRadius = UDim.new(0, 12)
 
 local title = Instance.new("TextLabel", frame)
 title.Size = UDim2_new(1,0,0,50)
@@ -78,7 +88,7 @@ title.Font = Enum.Font.GothamBold
 title.TextSize = 22
 title.TextColor3 = Color3.fromRGB(235,235,235)
 
--- ===== BUTTON FACTORY =====
+-- Função para criar botões estilizados
 local function createButton(text, y, width)
 	width = width or 220
 	local b = Instance.new("TextButton", frame)
@@ -89,20 +99,33 @@ local function createButton(text, y, width)
 	b.Font = Enum.Font.GothamBold
 	b.TextSize = 15
 	b.Text = text
-	Instance.new("UICorner", b).CornerRadius = UDim.new(0,8)
+
+	local corner = Instance.new("UICorner", b)
+	corner.CornerRadius = UDim.new(0,8)
+
+	-- Gradiente
+	local grad = Instance.new("UIGradient", b)
+	grad.Color = ColorSequence.new{
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(75,95,115)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(60,80,100))
+	}
+
+	-- Hover efeito
+	b.MouseEnter:Connect(function()
+		TweenService:Create(b, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(90,110,130)}):Play()
+	end)
+	b.MouseLeave:Connect(function()
+		TweenService:Create(b, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(60,80,100)}):Play()
+	end)
+
 	return b
 end
 
--- ===== BOTÕES =====
 local autofarmBtn = createButton("🤖 Autofarm: OFF", 60)
-local macroBtn    = createButton("🖱️ Macro M1: OFF", 60, 220)
-macroBtn.Position = UDim2_new(0, 260, 0, 60)
+local godBtn      = createButton("🛡️ God Mode: OFF", 120)
+local jumpBtn     = createButton("🚀 Infinite Jump: OFF", 180)
+local speedBtn    = createButton("💨 Speed: OFF", 240)
 
-local godBtn   = createButton("🛡️ God Mode: OFF", 120)
-local jumpBtn  = createButton("🚀 Infinite Jump: OFF", 180) -- <<<<<< BOTÃO
-local speedBtn = createButton("💨 Speed: OFF", 240)
-
--- ===== SPEED BOX =====
 local speedBox = Instance.new("TextBox", frame)
 speedBox.Size = UDim2_new(0, 100, 0, 35)
 speedBox.Position = UDim2_new(1, -130, 0, 245)
@@ -111,27 +134,105 @@ speedBox.Font = Enum.Font.GothamBold
 speedBox.TextSize = 14
 speedBox.BackgroundColor3 = Color3.fromRGB(50,70,90)
 speedBox.TextColor3 = Color3.new(1,1,1)
-Instance.new("UICorner", speedBox).CornerRadius = UDim.new(0,6)
+speedBox.PlaceholderText = "Speed"
+local speedCorner = Instance.new("UICorner", speedBox)
+speedCorner.CornerRadius = UDim.new(0,6)
 
--- ===== AUTOFARM =====
-local function autofarmLoop()
-	if not state.autofarmEnabled then return end
+-- ===== BOTÃO PARA ALTERAR TECLA DO GUI =====
+local guiKeyBtn = createButton("GUI key ("..state.guiToggleKey.Name..")", 300, 260)
+guiKeyBtn.Position = UDim2_new(0, 20, 0, 300)
+
+local waitingForKey = false
+guiKeyBtn.MouseButton1Click:Connect(function()
+	waitingForKey = true
+	guiKeyBtn.Text = "Press a key..."
+end)
+
+-- ===== NPC CACHE =====
+local function updateNPCCache()
+	table.clear(state.npcCache)
+
 	local char = player.Character
 	local root = char and char:FindFirstChild("HumanoidRootPart")
 	if not root then return end
 
 	for _, npc in ipairs(AliveFolder:GetChildren()) do
-		local hrp = npc:FindFirstChild("HumanoidRootPart")
-		local hum = npc:FindFirstChild("Humanoid")
-		if hrp and hum and hum.Health > 0 then
-			root.CFrame =
-				hrp.CFrame
-				- hrp.CFrame.LookVector * CONFIG.BACK_DISTANCE
-				+ Vector3_new(0, CONFIG.HEIGHT_OFFSET, 0)
-			break
+		if npc:IsA("Model") and npc ~= char then
+			local hum = npc:FindFirstChild("Humanoid")
+			local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+			if hum and npcRoot and hum.Health > 0 then
+				local dist = (root.Position - npcRoot.Position).Magnitude
+				if dist <= CONFIG.MAX_DISTANCE then
+					table.insert(state.npcCache, {model=npc, root=npcRoot, humanoid=hum, distance=dist})
+				end
+			end
 		end
 	end
+
+	table.sort(state.npcCache, function(a,b) return a.distance < b.distance end)
 end
+
+local function findClosestNPC()
+	if tick() - state.lastNPCScan > CONFIG.NPC_SCAN_INTERVAL then
+		updateNPCCache()
+		state.lastNPCScan = tick()
+	end
+	return state.npcCache[1] and state.npcCache[1].model
+end
+
+-- ===== AUTOFARM LOOP =====
+local function autofarmLoop()
+	if not state.autofarmEnabled then return end
+
+	local char = player.Character
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	if not root then return end
+
+	if not state.lockedNPC or not state.lockedNPC.Parent then
+		state.lockedNPC = findClosestNPC()
+	end
+
+	local npc = state.lockedNPC
+	if not npc then return end
+
+	local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+	if not npcRoot then return end
+
+	root.AssemblyLinearVelocity = Vector3_zero
+	root.AssemblyAngularVelocity = Vector3_zero
+
+	root.CFrame = CFrame_new(
+		npcRoot.Position
+		- npcRoot.CFrame.LookVector * CONFIG.BACK_DISTANCE
+		+ Vector3_new(0, CONFIG.HEIGHT_OFFSET, 0)
+	)
+end
+
+-- ===== GOD MODE =====
+local function applyGodMode(char)
+	if not state.godModeEnabled then return end
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if not hum then return end
+
+	hum.BreakJointsOnDeath = false
+	hum.RequiresNeck = false
+	hum.MaxHealth = math.huge
+	hum.Health = hum.MaxHealth
+
+	disconnectConnection("god")
+	state.connections.god = hum.HealthChanged:Connect(function()
+		if state.godModeEnabled then
+			hum.Health = hum.MaxHealth
+		end
+	end)
+end
+
+RunService.Heartbeat:Connect(function()
+	if state.godModeEnabled then
+		local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+		if hum then hum.Health = hum.MaxHealth end
+	end
+end)
 
 -- ===== SPEED =====
 local function speedLoop()
@@ -146,31 +247,26 @@ local function speedLoop()
 	end
 end
 
--- ===== MACRO M1 =====
-local function macroM1Loop()
-	if not state.macroM1Enabled then return end
-	VirtualUser:Button1Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
-	task.wait(0.05)
-	VirtualUser:Button1Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
-end
-
--- ===== INFINITE JUMP (PARTE PRINCIPAL) =====
-UserInputService.JumpRequest:Connect(function()
-	if state.infiniteJumpEnabled then
-		local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-		if hum then
-			hum:ChangeState(Enum.HumanoidStateType.Jumping)
-		end
-	end
-end)
-
--- ===== BOTÕES =====
+-- ===== BUTTONS =====
 autofarmBtn.MouseButton1Click:Connect(function()
 	state.autofarmEnabled = not state.autofarmEnabled
 	autofarmBtn.Text = state.autofarmEnabled and "🤖 Autofarm: ON" or "🤖 Autofarm: OFF"
-	disconnectConnection("autofarm")
+
 	if state.autofarmEnabled then
+		disconnectConnection("autofarm")
 		state.connections.autofarm = RunService.Heartbeat:Connect(autofarmLoop)
+	else
+		disconnectConnection("autofarm")
+	end
+end)
+
+godBtn.MouseButton1Click:Connect(function()
+	state.godModeEnabled = not state.godModeEnabled
+	godBtn.Text = state.godModeEnabled and "🛡️ God Mode: ON" or "🛡️ God Mode: OFF"
+	if state.godModeEnabled then
+		applyGodMode(player.Character)
+	else
+		disconnectConnection("god")
 	end
 end)
 
@@ -179,36 +275,49 @@ jumpBtn.MouseButton1Click:Connect(function()
 	jumpBtn.Text = state.infiniteJumpEnabled and "🚀 Infinite Jump: ON" or "🚀 Infinite Jump: OFF"
 end)
 
+UserInputService.JumpRequest:Connect(function()
+	if state.infiniteJumpEnabled then
+		local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+		if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+	end
+end)
+
 speedBtn.MouseButton1Click:Connect(function()
 	state.speedEnabled = not state.speedEnabled
 	speedBtn.Text = state.speedEnabled and "💨 Speed: ON" or "💨 Speed: OFF"
-	state.speedValue = tonumber(speedBox.Text) or state.speedValue
-	disconnectConnection("speed")
+
 	if state.speedEnabled then
+		state.speedValue = tonumber(speedBox.Text) or state.speedValue
+		disconnectConnection("speed")
 		state.connections.speed = RunService.Heartbeat:Connect(speedLoop)
+	else
+		disconnectConnection("speed")
 	end
 end)
 
-macroBtn.MouseButton1Click:Connect(function()
-	state.macroM1Enabled = not state.macroM1Enabled
-	macroBtn.Text = state.macroM1Enabled and "🖱️ Macro M1: ON" or "🖱️ Macro M1: OFF"
-	disconnectConnection("macroM1")
-	if state.macroM1Enabled then
-		state.connections.macroM1 = RunService.Heartbeat:Connect(macroM1Loop)
-	end
-end)
-
--- ===== TECLAS =====
+-- ===== GUI TOGGLE E TECLA CUSTOM =====
 UserInputService.InputBegan:Connect(function(input, processed)
 	if processed then return end
 
-	if input.KeyCode == state.guiToggleKey then
+	-- Toggle GUI
+	if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == state.guiToggleKey then
 		state.guiVisible = not state.guiVisible
 		frame.Visible = state.guiVisible
 	end
 
-	if input.KeyCode == Enum.KeyCode.F2 then
-		macroBtn:Activate()
+	-- Redefinir tecla de toggle se estiver aguardando
+	if waitingForKey and input.UserInputType == Enum.UserInputType.Keyboard then
+		state.guiToggleKey = input.KeyCode
+		guiKeyBtn.Text = "GUI key ("..state.guiToggleKey.Name..")"
+		waitingForKey = false
 	end
 end)
 
+player.CharacterAdded:Connect(function(char)
+	task.wait(0.3)
+	if state.godModeEnabled then applyGodMode(char) end
+	if state.speedEnabled then
+		disconnectConnection("speed")
+		state.connections.speed = RunService.Heartbeat:Connect(speedLoop)
+	end
+end)
