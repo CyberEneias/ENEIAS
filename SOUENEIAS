@@ -1,4 +1,4 @@
--- ===== AUTOFARM + GOD + SPEED + INFINITE JUMP + M1 MACRO (FIXED) =====
+-- ===== AUTOFARM ULTRA-LEVE + GOD MODE + SPEED + INFINITE JUMP + MACRO M1 =====
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -15,44 +15,48 @@ local CONFIG = {
 	BACK_DISTANCE = 3.5,
 	HEIGHT_OFFSET = 2.5,
 	MAX_DISTANCE = 60,
+	UPDATE_INTERVAL = 1,
 	GUI_NAME = "InfoExperienciaGui",
 	NPC_SCAN_INTERVAL = 0.3
 }
 
+-- ===== NPC FOLDER =====
 local AliveFolder = workspace:WaitForChild("Alive")
+
+-- ===== CACHE =====
+local Vector3_new = Vector3.new
+local Vector3_zero = Vector3.zero
+local CFrame_new = CFrame.new
+local UDim2_new = UDim2.new
 
 -- ===== STATE =====
 local state = {
 	autofarmEnabled = false,
-	speedEnabled = false,
 	infiniteJumpEnabled = false,
+	speedEnabled = false,
 	godModeEnabled = false,
-	m1MacroEnabled = false,
+	macroM1Enabled = false,
 
 	speedValue = 160,
-	m1Delay = 0.08,
-	m1Hotkey = Enum.KeyCode.F2,
-
 	lockedNPC = nil,
 	lastNPCScan = 0,
 	npcCache = {},
-
 	connections = {},
 	guiVisible = true,
-	guiToggleKey = Enum.KeyCode.F1
+	guiToggleKey = Enum.KeyCode.F1,
 }
 
 -- ===== UTILS =====
-local function disconnect(name)
+local function disconnectConnection(name)
 	if state.connections[name] then
 		state.connections[name]:Disconnect()
 		state.connections[name] = nil
 	end
 end
 
--- ===== GUI CLEAN =====
-local old = CoreGui:FindFirstChild(CONFIG.GUI_NAME)
-if old then old:Destroy() end
+-- ===== CLEAN GUI =====
+local oldGui = CoreGui:FindFirstChild(CONFIG.GUI_NAME)
+if oldGui then oldGui:Destroy() end
 
 -- ===== GUI =====
 local gui = Instance.new("ScreenGui", CoreGui)
@@ -60,146 +64,100 @@ gui.Name = CONFIG.GUI_NAME
 gui.ResetOnSpawn = false
 
 local frame = Instance.new("Frame", gui)
-frame.Size = UDim2.new(0,560,0,400)
-frame.Position = UDim2.new(0.5,-280,0.5,-200)
+frame.Size = UDim2_new(0, 560, 0, 400)
+frame.Position = UDim2_new(0.5, -280, 0.5, -200)
 frame.BackgroundColor3 = Color3.fromRGB(35,35,40)
 frame.Active = true
 frame.Draggable = true
 frame.BorderSizePixel = 0
-Instance.new("UICorner", frame).CornerRadius = UDim.new(0,12)
+
+local frameCorner = Instance.new("UICorner", frame)
+frameCorner.CornerRadius = UDim.new(0, 12)
 
 local title = Instance.new("TextLabel", frame)
-title.Size = UDim2.new(1,0,0,50)
+title.Size = UDim2_new(1,0,0,50)
 title.BackgroundTransparency = 1
 title.Text = "🔥 AUTOFARM CONTROLLER"
 title.Font = Enum.Font.GothamBold
 title.TextSize = 22
 title.TextColor3 = Color3.fromRGB(235,235,235)
 
--- ===== BUTTON FACTORY =====
-local function createButton(text,y)
+-- ===== FUNÇÃO BOTÃO =====
+local function createButton(text, y, width)
+	width = width or 220
 	local b = Instance.new("TextButton", frame)
-	b.Size = UDim2.new(0,220,0,45)
-	b.Position = UDim2.new(0,20,0,y)
+	b.Size = UDim2_new(0, width, 0, 45)
+	b.Position = UDim2_new(0, 20, 0, y)
 	b.BackgroundColor3 = Color3.fromRGB(60,80,100)
 	b.TextColor3 = Color3.new(1,1,1)
 	b.Font = Enum.Font.GothamBold
 	b.TextSize = 15
 	b.Text = text
-	Instance.new("UICorner", b).CornerRadius = UDim.new(0,8)
+
+	local corner = Instance.new("UICorner", b)
+	corner.CornerRadius = UDim.new(0,8)
+
+	b.MouseEnter:Connect(function()
+		TweenService:Create(b, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(90,110,130)}):Play()
+	end)
+	b.MouseLeave:Connect(function()
+		TweenService:Create(b, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(60,80,100)}):Play()
+	end)
+
 	return b
 end
 
--- ===== BUTTONS =====
-local autofarmBtn = createButton("🤖 Autofarm: OFF",60)
-local speedBtn    = createButton("💨 Speed: OFF",120)
-local jumpBtn     = createButton("🚀 Infinite Jump: OFF",180)
-local m1Btn       = createButton("🖱️ M1 Macro: OFF (F2)",240)
+-- ===== BOTÕES =====
+local autofarmBtn = createButton("🤖 Autofarm: OFF", 60)
+local godBtn      = createButton("🛡️ God Mode: OFF", 120)
+local jumpBtn     = createButton("🚀 Infinite Jump: OFF", 180)
+local speedBtn    = createButton("💨 Speed: OFF", 240)
+local macroBtn    = createButton("🖱️ Macro M1: OFF (F2)", 300)
 
--- ===== NPC CACHE =====
-local function updateNPCCache()
-	table.clear(state.npcCache)
-	local char = player.Character
-	local root = char and char:FindFirstChild("HumanoidRootPart")
-	if not root then return end
+-- ===== SPEED BOX =====
+local speedBox = Instance.new("TextBox", frame)
+speedBox.Size = UDim2_new(0, 100, 0, 35)
+speedBox.Position = UDim2_new(1, -130, 0, 245)
+speedBox.Text = tostring(state.speedValue)
+speedBox.Font = Enum.Font.GothamBold
+speedBox.TextSize = 14
+speedBox.BackgroundColor3 = Color3.fromRGB(50,70,90)
+speedBox.TextColor3 = Color3.new(1,1,1)
 
-	for _,npc in ipairs(AliveFolder:GetChildren()) do
-		local hum = npc:FindFirstChild("Humanoid")
-		local r = npc:FindFirstChild("HumanoidRootPart")
-		if hum and r and hum.Health > 0 then
-			local dist = (root.Position - r.Position).Magnitude
-			if dist <= CONFIG.MAX_DISTANCE then
-				table.insert(state.npcCache,{model=npc,root=r,dist=dist})
-			end
-		end
-	end
-	table.sort(state.npcCache,function(a,b) return a.dist < b.dist end)
-end
-
-local function getClosestNPC()
-	if tick() - state.lastNPCScan > CONFIG.NPC_SCAN_INTERVAL then
-		updateNPCCache()
-		state.lastNPCScan = tick()
-	end
-	return state.npcCache[1] and state.npcCache[1].model
-end
-
--- ===== AUTOFARM LOOP =====
-local function autofarmLoop()
-	local char = player.Character
-	local root = char and char:FindFirstChild("HumanoidRootPart")
-	if not root then return end
-
-	if not state.lockedNPC or not state.lockedNPC.Parent then
-		state.lockedNPC = getClosestNPC()
-	end
-	if not state.lockedNPC then return end
-
-	local npcRoot = state.lockedNPC:FindFirstChild("HumanoidRootPart")
-	if not npcRoot then return end
-
-	root.AssemblyLinearVelocity = Vector3.zero
-	root.CFrame =
-		npcRoot.CFrame
-		- npcRoot.CFrame.LookVector * CONFIG.BACK_DISTANCE
-		+ Vector3.new(0,CONFIG.HEIGHT_OFFSET,0)
-end
-
--- ===== SPEED LOOP =====
-local function speedLoop()
-	local char = player.Character
-	local root = char and char:FindFirstChild("HumanoidRootPart")
-	local hum = char and char:FindFirstChildOfClass("Humanoid")
-	if root and hum and hum.MoveDirection.Magnitude > 0 then
-		root.AssemblyLinearVelocity = hum.MoveDirection.Unit * state.speedValue
-	end
-end
-
--- ===== M1 LOOP =====
-local function m1Loop()
+-- ===== MACRO M1 LOOP =====
+local function macroM1Loop()
+	if not state.macroM1Enabled then return end
 	VirtualInputManager:SendMouseButtonEvent(0,0,0,true,game,0)
-	task.wait(0.01)
+	task.wait(0.02)
 	VirtualInputManager:SendMouseButtonEvent(0,0,0,false,game,0)
 end
 
--- ===== TOGGLES =====
-local function toggleM1()
-	state.m1MacroEnabled = not state.m1MacroEnabled
-	m1Btn.Text = state.m1MacroEnabled and "🖱️ M1 Macro: ON (F2)" or "🖱️ M1 Macro: OFF (F2)"
-
-	if state.m1MacroEnabled then
-		disconnect("m1")
-		state.connections.m1 = RunService.Heartbeat:Connect(function()
-			m1Loop()
-			task.wait(state.m1Delay)
-		end)
-	else
-		disconnect("m1")
-	end
-end
-
-m1Btn.MouseButton1Click:Connect(toggleM1)
-
-autofarmBtn.MouseButton1Click:Connect(function()
-	state.autofarmEnabled = not state.autofarmEnabled
-	autofarmBtn.Text = state.autofarmEnabled and "🤖 Autofarm: ON" or "🤖 Autofarm: OFF"
-	if state.autofarmEnabled then
-		disconnect("autofarm")
-		state.connections.autofarm = RunService.Heartbeat:Connect(autofarmLoop)
-	else
-		disconnect("autofarm")
+RunService.Heartbeat:Connect(function()
+	if state.macroM1Enabled then
+		macroM1Loop()
 	end
 end)
 
-speedBtn.MouseButton1Click:Connect(function()
-	state.speedEnabled = not state.speedEnabled
-	speedBtn.Text = state.speedEnabled and "💨 Speed: ON" or "💨 Speed: OFF"
-	if state.speedEnabled then
-		disconnect("speed")
-		state.connections.speed = RunService.Heartbeat:Connect(speedLoop)
-	else
-		disconnect("speed")
-	end
+-- ===== AUTOFARM =====
+local function autofarmLoop()
+	if not state.autofarmEnabled then return end
+	local char = player.Character
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	if not root then return end
+
+	root.AssemblyLinearVelocity = Vector3_zero
+	root.AssemblyAngularVelocity = Vector3_zero
+end
+
+-- ===== BUTTON LOGIC =====
+autofarmBtn.MouseButton1Click:Connect(function()
+	state.autofarmEnabled = not state.autofarmEnabled
+	autofarmBtn.Text = state.autofarmEnabled and "🤖 Autofarm: ON" or "🤖 Autofarm: OFF"
+end)
+
+godBtn.MouseButton1Click:Connect(function()
+	state.godModeEnabled = not state.godModeEnabled
+	godBtn.Text = state.godModeEnabled and "🛡️ God Mode: ON" or "🛡️ God Mode: OFF"
 end)
 
 jumpBtn.MouseButton1Click:Connect(function()
@@ -207,20 +165,28 @@ jumpBtn.MouseButton1Click:Connect(function()
 	jumpBtn.Text = state.infiniteJumpEnabled and "🚀 Infinite Jump: ON" or "🚀 Infinite Jump: OFF"
 end)
 
-UserInputService.JumpRequest:Connect(function()
-	if state.infiniteJumpEnabled then
-		local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-		if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
-	end
+speedBtn.MouseButton1Click:Connect(function()
+	state.speedEnabled = not state.speedEnabled
+	speedBtn.Text = state.speedEnabled and "💨 Speed: ON" or "💨 Speed: OFF"
+	state.speedValue = tonumber(speedBox.Text) or state.speedValue
 end)
 
--- ===== HOTKEYS =====
-UserInputService.InputBegan:Connect(function(input,gpe)
-	if gpe then return end
-	if input.KeyCode == state.m1Hotkey then
-		toggleM1()
-	elseif input.KeyCode == state.guiToggleKey then
+macroBtn.MouseButton1Click:Connect(function()
+	state.macroM1Enabled = not state.macroM1Enabled
+	macroBtn.Text = state.macroM1Enabled and "🖱️ Macro M1: ON (F2)" or "🖱️ Macro M1: OFF (F2)"
+end)
+
+-- ===== INPUT =====
+UserInputService.InputBegan:Connect(function(input, processed)
+	if processed then return end
+
+	if input.KeyCode == Enum.KeyCode.F1 then
 		state.guiVisible = not state.guiVisible
 		frame.Visible = state.guiVisible
+	end
+
+	if input.KeyCode == Enum.KeyCode.F2 then
+		state.macroM1Enabled = not state.macroM1Enabled
+		macroBtn.Text = state.macroM1Enabled and "🖱️ Macro M1: ON (F2)" or "🖱️ Macro M1: OFF (F2)"
 	end
 end)
