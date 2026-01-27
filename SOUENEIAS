@@ -15,12 +15,10 @@ local CONFIG = {
 	BACK_DISTANCE = 3.5,
 	HEIGHT_OFFSET = 2.5,
 	MAX_DISTANCE = 60,
-	UPDATE_INTERVAL = 1,
 	GUI_NAME = "InfoExperienciaGui",
 	NPC_SCAN_INTERVAL = 0.3
 }
 
--- ===== NPC FOLDER =====
 local AliveFolder = workspace:WaitForChild("Alive")
 
 -- ===== CACHE =====
@@ -35,10 +33,12 @@ local state = {
 	infiniteJumpEnabled = false,
 	speedEnabled = false,
 	godModeEnabled = false,
+
 	m1MacroEnabled = false,
+	m1Delay = 0.08,
+	m1Hotkey = Enum.KeyCode.F2,
 
 	speedValue = 160,
-	m1Delay = 0.08,
 
 	lockedNPC = nil,
 	lastNPCScan = 0,
@@ -73,7 +73,6 @@ frame.BackgroundColor3 = Color3.fromRGB(35,35,40)
 frame.Active = true
 frame.Draggable = true
 frame.BorderSizePixel = 0
-
 Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 12)
 
 local title = Instance.new("TextLabel", frame)
@@ -112,8 +111,9 @@ local autofarmBtn = createButton("🤖 Autofarm: OFF", 60)
 local godBtn      = createButton("🛡️ God Mode: OFF", 120)
 local jumpBtn     = createButton("🚀 Infinite Jump: OFF", 180)
 local speedBtn    = createButton("💨 Speed: OFF", 240)
-local m1Btn       = createButton("🖱️ M1 Macro: OFF", 300)
+local m1Btn       = createButton("🖱️ M1 Macro: OFF (F2)", 300)
 
+-- ===== SPEED BOX =====
 local speedBox = Instance.new("TextBox", frame)
 speedBox.Size = UDim2_new(0, 100, 0, 35)
 speedBox.Position = UDim2_new(1, -130, 0, 245)
@@ -123,16 +123,6 @@ speedBox.TextSize = 14
 speedBox.BackgroundColor3 = Color3.fromRGB(50,70,90)
 speedBox.TextColor3 = Color3.new(1,1,1)
 Instance.new("UICorner", speedBox).CornerRadius = UDim.new(0,6)
-
--- ===== GUI KEY BUTTON =====
-local guiKeyBtn = createButton("GUI key (F1)", 350, 260)
-guiKeyBtn.Position = UDim2_new(0, 20, 0, 350)
-
-local waitingForKey = false
-guiKeyBtn.MouseButton1Click:Connect(function()
-	waitingForKey = true
-	guiKeyBtn.Text = "Press a key..."
-end)
 
 -- ===== NPC CACHE =====
 local function updateNPCCache()
@@ -163,7 +153,7 @@ local function findClosestNPC()
 	return state.npcCache[1] and state.npcCache[1].model
 end
 
--- ===== AUTOFARM LOOP =====
+-- ===== AUTOFARM =====
 local function autofarmLoop()
 	if not state.autofarmEnabled then return end
 	local char = player.Character
@@ -186,15 +176,6 @@ local function autofarmLoop()
 		+ Vector3_new(0, CONFIG.HEIGHT_OFFSET, 0)
 end
 
--- ===== GOD MODE =====
-local function applyGodMode(char)
-	if not state.godModeEnabled then return end
-	local hum = char:FindFirstChildOfClass("Humanoid")
-	if not hum then return end
-	hum.MaxHealth = math.huge
-	hum.Health = hum.MaxHealth
-end
-
 -- ===== SPEED =====
 local function speedLoop()
 	if not state.speedEnabled then return end
@@ -202,8 +183,7 @@ local function speedLoop()
 	local root = char and char:FindFirstChild("HumanoidRootPart")
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
 	if root and hum and hum.MoveDirection.Magnitude > 0 then
-		root.AssemblyLinearVelocity =
-			hum.MoveDirection.Unit * state.speedValue
+		root.AssemblyLinearVelocity = hum.MoveDirection.Unit * state.speedValue
 	end
 end
 
@@ -233,26 +213,6 @@ autofarmBtn.MouseButton1Click:Connect(function()
 	end
 end)
 
-godBtn.MouseButton1Click:Connect(function()
-	state.godModeEnabled = not state.godModeEnabled
-	godBtn.Text = state.godModeEnabled and "🛡️ God Mode: ON" or "🛡️ God Mode: OFF"
-	if state.godModeEnabled then
-		applyGodMode(player.Character)
-	end
-end)
-
-jumpBtn.MouseButton1Click:Connect(function()
-	state.infiniteJumpEnabled = not state.infiniteJumpEnabled
-	jumpBtn.Text = state.infiniteJumpEnabled and "🚀 Infinite Jump: ON" or "🚀 Infinite Jump: OFF"
-end)
-
-UserInputService.JumpRequest:Connect(function()
-	if state.infiniteJumpEnabled then
-		local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-		if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
-	end
-end)
-
 speedBtn.MouseButton1Click:Connect(function()
 	state.speedEnabled = not state.speedEnabled
 	speedBtn.Text = state.speedEnabled and "💨 Speed: ON" or "💨 Speed: OFF"
@@ -267,26 +227,19 @@ end)
 
 m1Btn.MouseButton1Click:Connect(function()
 	state.m1MacroEnabled = not state.m1MacroEnabled
-	m1Btn.Text = state.m1MacroEnabled and "🖱️ M1 Macro: ON" or "🖱️ M1 Macro: OFF"
+	m1Btn.Text = state.m1MacroEnabled and "🖱️ M1 Macro: ON (F2)" or "🖱️ M1 Macro: OFF (F2)"
 end)
 
--- ===== GUI TOGGLE =====
+-- ===== HOTKEY F2 (M1 MACRO) =====
 UserInputService.InputBegan:Connect(function(input, gpe)
 	if gpe then return end
-
 	if input.UserInputType == Enum.UserInputType.Keyboard then
-		if waitingForKey then
-			state.guiToggleKey = input.KeyCode
-			guiKeyBtn.Text = "GUI key ("..input.KeyCode.Name..")"
-			waitingForKey = false
+		if input.KeyCode == state.m1Hotkey then
+			state.m1MacroEnabled = not state.m1MacroEnabled
+			m1Btn.Text = state.m1MacroEnabled and "🖱️ M1 Macro: ON (F2)" or "🖱️ M1 Macro: OFF (F2)"
 		elseif input.KeyCode == state.guiToggleKey then
 			state.guiVisible = not state.guiVisible
 			frame.Visible = state.guiVisible
 		end
 	end
-end)
-
-player.CharacterAdded:Connect(function(char)
-	task.wait(0.3)
-	if state.godModeEnabled then applyGodMode(char) end
 end)
