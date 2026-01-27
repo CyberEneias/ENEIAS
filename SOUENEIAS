@@ -125,50 +125,53 @@ speedBox.BackgroundColor3 = Color3.fromRGB(50,70,90)
 speedBox.TextColor3 = Color3.new(1,1,1)
 
 -- ===== MACRO M1 LOOP =====
-local function macroM1Loop()
-	if not state.macroM1Enabled then return end
-	VirtualInputManager:SendMouseButtonEvent(0,0,0,true,game,0)
-	task.wait(0.02)
-	VirtualInputManager:SendMouseButtonEvent(0,0,0,false,game,0)
-end
-
 RunService.Heartbeat:Connect(function()
 	if state.macroM1Enabled then
-		macroM1Loop()
+		VirtualInputManager:SendMouseButtonEvent(0,0,0,true,game,0)
+		task.wait(0.02)
+		VirtualInputManager:SendMouseButtonEvent(0,0,0,false,game,0)
 	end
 end)
 
--- ===== AUTOFARM =====
+-- ===== AUTOFARM LOOP (ORIGINAL) =====
 local function autofarmLoop()
 	if not state.autofarmEnabled then return end
+
 	local char = player.Character
 	local root = char and char:FindFirstChild("HumanoidRootPart")
 	if not root then return end
 
+	if not state.lockedNPC or not state.lockedNPC.Parent then
+		state.lockedNPC = findClosestNPC()
+	end
+
+	local npc = state.lockedNPC
+	if not npc then return end
+
+	local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+	if not npcRoot then return end
+
 	root.AssemblyLinearVelocity = Vector3_zero
 	root.AssemblyAngularVelocity = Vector3_zero
+
+	root.CFrame = CFrame_new(
+		npcRoot.Position
+		- npcRoot.CFrame.LookVector * CONFIG.BACK_DISTANCE
+		+ Vector3_new(0, CONFIG.HEIGHT_OFFSET, 0)
+	)
 end
 
 -- ===== BUTTON LOGIC =====
 autofarmBtn.MouseButton1Click:Connect(function()
 	state.autofarmEnabled = not state.autofarmEnabled
 	autofarmBtn.Text = state.autofarmEnabled and "🤖 Autofarm: ON" or "🤖 Autofarm: OFF"
-end)
 
-godBtn.MouseButton1Click:Connect(function()
-	state.godModeEnabled = not state.godModeEnabled
-	godBtn.Text = state.godModeEnabled and "🛡️ God Mode: ON" or "🛡️ God Mode: OFF"
-end)
-
-jumpBtn.MouseButton1Click:Connect(function()
-	state.infiniteJumpEnabled = not state.infiniteJumpEnabled
-	jumpBtn.Text = state.infiniteJumpEnabled and "🚀 Infinite Jump: ON" or "🚀 Infinite Jump: OFF"
-end)
-
-speedBtn.MouseButton1Click:Connect(function()
-	state.speedEnabled = not state.speedEnabled
-	speedBtn.Text = state.speedEnabled and "💨 Speed: ON" or "💨 Speed: OFF"
-	state.speedValue = tonumber(speedBox.Text) or state.speedValue
+	if state.autofarmEnabled then
+		disconnectConnection("autofarm")
+		state.connections.autofarm = RunService.Heartbeat:Connect(autofarmLoop)
+	else
+		disconnectConnection("autofarm")
+	end
 end)
 
 macroBtn.MouseButton1Click:Connect(function()
