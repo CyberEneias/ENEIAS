@@ -3,7 +3,6 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
-local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 -- ===== PLAYER =====
@@ -62,28 +61,34 @@ local oldGui = CoreGui:FindFirstChild(CONFIG.GUI_NAME)
 if oldGui then oldGui:Destroy() end
 
 -- ===== GUI =====
-local gui = Instance.new("ScreenGui", CoreGui)
+local gui = Instance.new("ScreenGui")
 gui.Name = CONFIG.GUI_NAME
 gui.ResetOnSpawn = false
+gui.Parent = CoreGui
 
-local frame = Instance.new("Frame", gui)
+local frame = Instance.new("Frame")
+frame.Parent = gui
 frame.Size = UDim2.new(0, 580, 0, 440)
 frame.Position = UDim2.new(0.5, -290, 0.5, -220)
 frame.BackgroundColor3 = Color3.fromRGB(35,35,40)
 frame.BorderSizePixel = 0
-frame.Active = false -- drag removido
+frame.Active = false
+frame.ZIndex = 1
 Instance.new("UICorner", frame).CornerRadius = UDim.new(0,12)
 
-local title = Instance.new("TextLabel", frame)
+local title = Instance.new("TextLabel")
+title.Parent = frame
 title.Size = UDim2.new(1,0,0,45)
 title.BackgroundTransparency = 1
 title.Text = "🔥 AUTOFARM CONTROLLER"
 title.Font = Enum.Font.GothamBold
 title.TextSize = 22
 title.TextColor3 = Color3.new(1,1,1)
+title.ZIndex = 2
 
 local function createButton(text, y, w)
-	local b = Instance.new("TextButton", frame)
+	local b = Instance.new("TextButton")
+	b.Parent = frame
 	b.Size = UDim2.new(0, w or 240, 0, 45)
 	b.Position = UDim2.new(0, 20, 0, y)
 	b.BackgroundColor3 = Color3.fromRGB(60,80,100)
@@ -92,6 +97,7 @@ local function createButton(text, y, w)
 	b.TextSize = 15
 	b.Text = text
 	b.AutoButtonColor = true
+	b.ZIndex = 2
 	Instance.new("UICorner", b).CornerRadius = UDim.new(0,8)
 	return b
 end
@@ -102,7 +108,8 @@ local jumpBtn     = createButton("🚀 Infinite Jump: OFF", 180)
 local speedBtn    = createButton("💨 Speed: OFF", 240)
 
 -- ===== SPEED TEXTBOX =====
-local speedBox = Instance.new("TextBox", frame)
+local speedBox = Instance.new("TextBox")
+speedBox.Parent = frame
 speedBox.Size = UDim2.new(0,100,0,35)
 speedBox.Position = UDim2.new(1,-130,0,245)
 speedBox.Text = tostring(state.speedValue)
@@ -111,6 +118,8 @@ speedBox.TextSize = 14
 speedBox.BackgroundColor3 = Color3.fromRGB(50,70,90)
 speedBox.TextColor3 = Color3.new(1,1,1)
 speedBox.PlaceholderText = "Speed"
+speedBox.ClearTextOnFocus = false
+speedBox.ZIndex = 2
 Instance.new("UICorner", speedBox).CornerRadius = UDim.new(0,6)
 
 -- ===== GUI KEY BUTTON =====
@@ -154,10 +163,6 @@ end
 local Attacking = false
 local WeaponInfoFolder = script:FindFirstChild("WeaponInfoFolder")
 
-if not WeaponInfoFolder then
-	warn("[AUTOFARM] WeaponInfoFolder não encontrado, M1 desativado.")
-end
-
 local function CanAttack()
 	if _G.FistDisabled or Attacking or _G.GCD then return end
 	local char = player.Character
@@ -193,7 +198,6 @@ local function AttemptM1()
 			local anim = animFolder:FindFirstChild("P_".._G.Clicked)
 			if anim then hum:LoadAnimation(anim):Play() end
 		end
-
 		CombatEvent:FireServer(_G.Clicked, weapon, root.CFrame, true, weapon)
 	end
 
@@ -271,7 +275,6 @@ autofarmBtn.MouseButton1Click:Connect(function()
 	state.autofarmEnabled = not state.autofarmEnabled
 	autofarmBtn.Text = state.autofarmEnabled and "🤖 Autofarm: ON" or "🤖 Autofarm: OFF"
 	disconnect("autofarm")
-
 	if state.autofarmEnabled then
 		state.connections.autofarm = RunService.Heartbeat:Connect(autofarmLoop)
 	end
@@ -281,7 +284,6 @@ auraBtn.MouseButton1Click:Connect(function()
 	state.killAuraEnabled = not state.killAuraEnabled
 	auraBtn.Text = state.killAuraEnabled and "🗡️ Kill Aura: ON" or "🗡️ Kill Aura: OFF"
 	disconnect("aura")
-
 	if state.killAuraEnabled then
 		state.connections.aura = RunService.Heartbeat:Connect(killAuraLoop)
 	end
@@ -296,7 +298,6 @@ speedBtn.MouseButton1Click:Connect(function()
 	state.speedEnabled = not state.speedEnabled
 	speedBtn.Text = state.speedEnabled and "💨 Speed: ON" or "💨 Speed: OFF"
 	state.speedValue = tonumber(speedBox.Text) or state.speedValue
-
 	disconnect("speed")
 	if state.speedEnabled then
 		state.connections.speed = RunService.Heartbeat:Connect(speedLoop)
@@ -308,10 +309,8 @@ guiKeyBtn.MouseButton1Click:Connect(function()
 	guiKeyBtn.Text = "Press a key..."
 end)
 
--- ===== INPUT =====
-UserInputService.InputBegan:Connect(function(input, gp)
-	if gp then return end
-
+-- ===== INPUT (CORRIGIDO: SEM gp) =====
+UserInputService.InputBegan:Connect(function(input)
 	if state.waitingForKey and input.UserInputType == Enum.UserInputType.Keyboard then
 		state.guiToggleKey = input.KeyCode
 		guiKeyBtn.Text = "GUI key ("..state.guiToggleKey.Name..")"
