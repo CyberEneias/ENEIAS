@@ -86,9 +86,12 @@ speedBox.ClearTextOnFocus = false
 Instance.new("UICorner", speedBox).CornerRadius = UDim.new(0,6)
 
 -- ===== WEAPON INFO =====
-local WeaponInfoFolder = script:WaitForChild("WeaponInfoFolder")
+local WeaponInfoFolder = script:FindFirstChild("WeaponInfoFolder")
+if not WeaponInfoFolder then
+	warn("[GUI] WeaponInfoFolder NÃO encontrado — combate desativado")
+end
 
--- ===== COMBAT (ORIGINAL) =====
+-- ===== COMBAT =====
 local Attacking = false
 
 local function CanAttack()
@@ -103,6 +106,7 @@ local function CanAttack()
 end
 
 local function DoAttack()
+	if not WeaponInfoFolder then return end
 	if not CanAttack() then return end
 
 	local char = player.Character
@@ -113,19 +117,21 @@ local function DoAttack()
 	Attacking = true
 	_G.GCD = true
 
-	local weapon = WeaponInfoFolder.Fist
+	local weapon = WeaponInfoFolder:FindFirstChild("Fist")
 	if char:FindFirstChild("WeaponEquiped") then
 		local w = WeaponInfoFolder:FindFirstChild(char.WeaponEquiped.Value)
 		if w then weapon = w end
 	end
 
-	local animFolder = weapon:FindFirstChild("FanAnimations")
-	if animFolder then
-		local anim = animFolder:FindFirstChild("P_".._G.Clicked)
-		if anim then hum:LoadAnimation(anim):Play() end
+	local animFolder = weapon and weapon:FindFirstChild("FanAnimations")
+	local anim = animFolder and animFolder:FindFirstChild("P_".._G.Clicked)
+	if anim and hum then
+		hum:LoadAnimation(anim):Play()
 	end
 
-	CombatEvent:FireServer(_G.Clicked, weapon, root.CFrame, true, weapon)
+	if weapon then
+		CombatEvent:FireServer(_G.Clicked, weapon, root.CFrame, true, weapon)
+	end
 
 	_G.Clicked += 1
 	if _G.Clicked > 4 then _G.Clicked = 1 end
@@ -140,7 +146,7 @@ ResetComboEvent.OnClientEvent:Connect(function()
 	_G.Clicked = 1
 end)
 
--- ===== KILL AURA (100% FIEL) =====
+-- ===== KILL AURA =====
 local lastAura = 0
 RunService.Heartbeat:Connect(function()
 	if not state.killAuraEnabled then return end
@@ -160,6 +166,14 @@ RunService.Heartbeat:Connect(function()
 				return
 			end
 		end
+	end
+end)
+
+-- ===== INFINITE JUMP =====
+UserInputService.JumpRequest:Connect(function()
+	if state.infiniteJumpEnabled then
+		local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+		if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
 	end
 end)
 
@@ -185,8 +199,9 @@ speedBtn.MouseButton1Click:Connect(function()
 	speedBtn.Text = state.speedEnabled and "💨 Speed: ON" or "💨 Speed: OFF"
 end)
 
--- ===== F1 =====
-UserInputService.InputBegan:Connect(function(input)
+-- ===== F1 (toggle GUI) =====
+UserInputService.InputBegan:Connect(function(input, gp)
+	if gp then return end
 	if input.KeyCode == state.guiToggleKey then
 		state.guiVisible = not state.guiVisible
 		frame.Visible = state.guiVisible
