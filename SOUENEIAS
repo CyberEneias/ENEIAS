@@ -13,7 +13,7 @@ if not player then return end
 -- ===== REMOTES =====
 local CombatEvent = ReplicatedStorage.Events.CombatEvent
 
--- ===== GLOBAL COMBO (ORIGINAL) =====
+-- ===== GLOBAL COMBO =====
 _G.Clicked = 1
 _G.GCD = false
 _G.FistDisabled = false
@@ -36,7 +36,6 @@ local AliveFolder = workspace:WaitForChild("Alive")
 local state = {
 	autofarmEnabled = false,
 	killAuraEnabled = false,
-	godModeEnabled = false,
 	infiniteJumpEnabled = false,
 	speedEnabled = false,
 	speedValue = 160,
@@ -67,8 +66,8 @@ gui.Name = CONFIG.GUI_NAME
 gui.ResetOnSpawn = false
 
 local frame = Instance.new("Frame", gui)
-frame.Size = UDim2.new(0, 580, 0, 380)
-frame.Position = UDim2.new(0.5, -290, 0.5, -190)
+frame.Size = UDim2.new(0, 580, 0, 420)
+frame.Position = UDim2.new(0.5, -290, 0.5, -210)
 frame.BackgroundColor3 = Color3.fromRGB(35,35,40)
 frame.Active = true
 frame.Draggable = true
@@ -78,7 +77,7 @@ Instance.new("UICorner", frame).CornerRadius = UDim.new(0,12)
 local title = Instance.new("TextLabel", frame)
 title.Size = UDim2.new(1,0,0,45)
 title.BackgroundTransparency = 1
-title.Text = "🔥 AUTOFARM + KILL AURA"
+title.Text = "🔥 AUTOFARM CONTROLLER"
 title.Font = Enum.Font.GothamBold
 title.TextSize = 22
 title.TextColor3 = Color3.new(1,1,1)
@@ -98,7 +97,8 @@ end
 
 local autofarmBtn = createButton("🤖 Autofarm: OFF", 60)
 local auraBtn     = createButton("🗡️ Kill Aura: OFF", 120)
-local godBtn      = createButton("🛡️ God Mode: OFF", 180)
+local jumpBtn     = createButton("🚀 Infinite Jump: OFF", 180)
+local speedBtn    = createButton("💨 Speed: OFF", 240)
 
 -- ===== NPC CACHE =====
 local function updateNPCCache()
@@ -130,7 +130,7 @@ local function getClosestNPC()
 	return state.npcCache[1]
 end
 
--- ===== CAN ATTACK (ORIGINAL) =====
+-- ===== M1 SYSTEM =====
 local Attacking = false
 local UsingMove = false
 local WeaponInfoFolder = script:WaitForChild("WeaponInfoFolder")
@@ -146,7 +146,6 @@ local function CanAttack()
 	return true
 end
 
--- ===== M1 (ORIGINAL) =====
 local function AttemptM1()
 	if not CanAttack() then return end
 
@@ -173,7 +172,7 @@ local function AttemptM1()
 
 	CombatEvent:FireServer(_G.Clicked, weapon, root.CFrame, true, weapon)
 
-	_G.Clicked = _G.Clicked + 1
+	_G.Clicked += 1
 	if _G.Clicked > 4 then _G.Clicked = 1 end
 
 	task.delay(0.4,function()
@@ -200,9 +199,9 @@ local function autofarmLoop()
 		+ Vector3.new(0, CONFIG.HEIGHT_OFFSET, 0)
 end
 
--- ===== KILL AURA (LEVE) =====
+-- ===== KILL AURA =====
 local function killAuraLoop()
-	if not state.killAuraEnabled then return end
+	if not state.killAuraEnabled or not state.autofarmEnabled then return end
 	if tick() - state.lastKillAura < CONFIG.KILL_AURA_DELAY then return end
 
 	local char = player.Character
@@ -218,6 +217,27 @@ local function killAuraLoop()
 		AttemptM1()
 	end
 end
+
+-- ===== SPEED =====
+local function speedLoop()
+	if not state.speedEnabled then return end
+	local char = player.Character
+	local hum = char and char:FindFirstChild("Humanoid")
+	local root = char and char:FindFirstChild("HumanoidRootPart")
+	if hum and root and hum.MoveDirection.Magnitude > 0 then
+		root.AssemblyLinearVelocity =
+			hum.MoveDirection.Unit * state.speedValue +
+			Vector3.new(0, root.AssemblyLinearVelocity.Y, 0)
+	end
+end
+
+-- ===== INFINITE JUMP =====
+UserInputService.JumpRequest:Connect(function()
+	if state.infiniteJumpEnabled then
+		local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+		if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+	end
+end)
 
 -- ===== BUTTONS =====
 autofarmBtn.MouseButton1Click:Connect(function()
@@ -235,6 +255,20 @@ auraBtn.MouseButton1Click:Connect(function()
 	disconnect("aura")
 	if state.killAuraEnabled then
 		state.connections.aura = RunService.Heartbeat:Connect(killAuraLoop)
+	end
+end)
+
+jumpBtn.MouseButton1Click:Connect(function()
+	state.infiniteJumpEnabled = not state.infiniteJumpEnabled
+	jumpBtn.Text = state.infiniteJumpEnabled and "🚀 Infinite Jump: ON" or "🚀 Infinite Jump: OFF"
+end)
+
+speedBtn.MouseButton1Click:Connect(function()
+	state.speedEnabled = not state.speedEnabled
+	speedBtn.Text = state.speedEnabled and "💨 Speed: ON" or "💨 Speed: OFF"
+	disconnect("speed")
+	if state.speedEnabled then
+		state.connections.speed = RunService.Heartbeat:Connect(speedLoop)
 	end
 end)
 
