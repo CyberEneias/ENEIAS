@@ -46,6 +46,7 @@ local state = {
 	lastKillAura = 0,
 	guiVisible = true,
 	guiToggleKey = Enum.KeyCode.F1,
+	waitingForKey = false
 }
 
 -- ===== UTILS =====
@@ -66,8 +67,8 @@ gui.Name = CONFIG.GUI_NAME
 gui.ResetOnSpawn = false
 
 local frame = Instance.new("Frame", gui)
-frame.Size = UDim2.new(0, 580, 0, 420)
-frame.Position = UDim2.new(0.5, -290, 0.5, -210)
+frame.Size = UDim2.new(0, 580, 0, 440)
+frame.Position = UDim2.new(0.5, -290, 0.5, -220)
 frame.BackgroundColor3 = Color3.fromRGB(35,35,40)
 frame.Active = true
 frame.Draggable = true
@@ -82,9 +83,9 @@ title.Font = Enum.Font.GothamBold
 title.TextSize = 22
 title.TextColor3 = Color3.new(1,1,1)
 
-local function createButton(text, y)
+local function createButton(text, y, w)
 	local b = Instance.new("TextButton", frame)
-	b.Size = UDim2.new(0,240,0,45)
+	b.Size = UDim2.new(0,w or 240,0,45)
 	b.Position = UDim2.new(0,20,0,y)
 	b.BackgroundColor3 = Color3.fromRGB(60,80,100)
 	b.TextColor3 = Color3.new(1,1,1)
@@ -100,6 +101,21 @@ local auraBtn     = createButton("🗡️ Kill Aura: OFF", 120)
 local jumpBtn     = createButton("🚀 Infinite Jump: OFF", 180)
 local speedBtn    = createButton("💨 Speed: OFF", 240)
 
+-- ===== SPEED TEXTBOX =====
+local speedBox = Instance.new("TextBox", frame)
+speedBox.Size = UDim2.new(0,100,0,35)
+speedBox.Position = UDim2.new(1,-130,0,245)
+speedBox.Text = tostring(state.speedValue)
+speedBox.Font = Enum.Font.GothamBold
+speedBox.TextSize = 14
+speedBox.BackgroundColor3 = Color3.fromRGB(50,70,90)
+speedBox.TextColor3 = Color3.new(1,1,1)
+speedBox.PlaceholderText = "Speed"
+Instance.new("UICorner", speedBox).CornerRadius = UDim.new(0,6)
+
+-- ===== GUI KEY BUTTON =====
+local guiKeyBtn = createButton("GUI key ("..state.guiToggleKey.Name..")", 300, 260)
+
 -- ===== NPC CACHE =====
 local function updateNPCCache()
 	table.clear(state.npcCache)
@@ -114,12 +130,12 @@ local function updateNPCCache()
 			if hum and r and hum.Health > 0 then
 				local dist = (root.Position - r.Position).Magnitude
 				if dist <= CONFIG.MAX_DISTANCE then
-					table.insert(state.npcCache, {model=npc, root=r, distance=dist})
+					table.insert(state.npcCache,{model=npc,root=r,distance=dist})
 				end
 			end
 		end
 	end
-	table.sort(state.npcCache, function(a,b) return a.distance < b.distance end)
+	table.sort(state.npcCache,function(a,b) return a.distance < b.distance end)
 end
 
 local function getClosestNPC()
@@ -132,7 +148,6 @@ end
 
 -- ===== M1 SYSTEM =====
 local Attacking = false
-local UsingMove = false
 local WeaponInfoFolder = script:WaitForChild("WeaponInfoFolder")
 
 local function CanAttack()
@@ -155,7 +170,6 @@ local function AttemptM1()
 	if not hum or not root then return end
 
 	Attacking = true
-	UsingMove = true
 	_G.GCD = true
 
 	local weapon = WeaponInfoFolder:FindFirstChild("Fist")
@@ -177,7 +191,6 @@ local function AttemptM1()
 
 	task.delay(0.4,function()
 		Attacking = false
-		UsingMove = false
 		_G.GCD = false
 	end)
 end
@@ -201,18 +214,15 @@ end
 
 -- ===== KILL AURA =====
 local function killAuraLoop()
-	if not state.killAuraEnabled or not state.autofarmEnabled then return end
+	if not (state.killAuraEnabled and state.autofarmEnabled) then return end
 	if tick() - state.lastKillAura < CONFIG.KILL_AURA_DELAY then return end
 
-	local char = player.Character
-	local root = char and char:FindFirstChild("HumanoidRootPart")
+	local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 	local npc = state.lockedNPC
 	if not root or not npc then return end
 
 	local npcRoot = npc:FindFirstChild("HumanoidRootPart")
-	if not npcRoot then return end
-
-	if (root.Position - npcRoot.Position).Magnitude <= CONFIG.KILL_AURA_RANGE then
+	if npcRoot and (root.Position - npcRoot.Position).Magnitude <= CONFIG.KILL_AURA_RANGE then
 		state.lastKillAura = tick()
 		AttemptM1()
 	end
@@ -266,15 +276,28 @@ end)
 speedBtn.MouseButton1Click:Connect(function()
 	state.speedEnabled = not state.speedEnabled
 	speedBtn.Text = state.speedEnabled and "💨 Speed: ON" or "💨 Speed: OFF"
+	state.speedValue = tonumber(speedBox.Text) or state.speedValue
 	disconnect("speed")
 	if state.speedEnabled then
 		state.connections.speed = RunService.Heartbeat:Connect(speedLoop)
 	end
 end)
 
--- ===== GUI TOGGLE =====
+guiKeyBtn.MouseButton1Click:Connect(function()
+	state.waitingForKey = true
+	guiKeyBtn.Text = "Press a key..."
+end)
+
+-- ===== INPUT =====
 UserInputService.InputBegan:Connect(function(input,gp)
 	if gp then return end
+
+	if state.waitingForKey and input.UserInputType == Enum.UserInputType.Keyboard then
+		state.guiToggleKey = input.KeyCode
+		guiKeyBtn.Text = "GUI key ("..state.guiToggleKey.Name..")"
+		state.waitingForKey = false
+	end
+
 	if input.KeyCode == state.guiToggleKey then
 		state.guiVisible = not state.guiVisible
 		frame.Visible = state.guiVisible
