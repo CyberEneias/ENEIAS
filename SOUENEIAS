@@ -11,7 +11,7 @@ local player = Players.LocalPlayer
 if not player then return end
 
 -- ===== REMOTES =====
-local CombatEvent = ReplicatedStorage.Events.CombatEvent
+local CombatEvent = ReplicatedStorage:WaitForChild("Events"):WaitForChild("CombatEvent")
 
 -- ===== GLOBAL COMBO =====
 _G.Clicked = 1
@@ -70,8 +70,8 @@ local frame = Instance.new("Frame", gui)
 frame.Size = UDim2.new(0, 580, 0, 440)
 frame.Position = UDim2.new(0.5, -290, 0.5, -220)
 frame.BackgroundColor3 = Color3.fromRGB(35,35,40)
-frame.Active = false
 frame.BorderSizePixel = 0
+frame.Active = false -- drag removido
 Instance.new("UICorner", frame).CornerRadius = UDim.new(0,12)
 
 local title = Instance.new("TextLabel", frame)
@@ -84,13 +84,14 @@ title.TextColor3 = Color3.new(1,1,1)
 
 local function createButton(text, y, w)
 	local b = Instance.new("TextButton", frame)
-	b.Size = UDim2.new(0,w or 240,0,45)
-	b.Position = UDim2.new(0,20,0,y)
+	b.Size = UDim2.new(0, w or 240, 0, 45)
+	b.Position = UDim2.new(0, 20, 0, y)
 	b.BackgroundColor3 = Color3.fromRGB(60,80,100)
 	b.TextColor3 = Color3.new(1,1,1)
 	b.Font = Enum.Font.GothamBold
 	b.TextSize = 15
 	b.Text = text
+	b.AutoButtonColor = true
 	Instance.new("UICorner", b).CornerRadius = UDim.new(0,8)
 	return b
 end
@@ -118,6 +119,7 @@ local guiKeyBtn = createButton("GUI key ("..state.guiToggleKey.Name..")", 300, 2
 -- ===== NPC CACHE =====
 local function updateNPCCache()
 	table.clear(state.npcCache)
+
 	local char = player.Character
 	local root = char and char:FindFirstChild("HumanoidRootPart")
 	if not root then return end
@@ -129,12 +131,15 @@ local function updateNPCCache()
 			if hum and r and hum.Health > 0 then
 				local dist = (root.Position - r.Position).Magnitude
 				if dist <= CONFIG.MAX_DISTANCE then
-					table.insert(state.npcCache,{model=npc,root=r,distance=dist})
+					table.insert(state.npcCache, {model=npc, root=r, distance=dist})
 				end
 			end
 		end
 	end
-	table.sort(state.npcCache,function(a,b) return a.distance < b.distance end)
+
+	table.sort(state.npcCache, function(a,b)
+		return a.distance < b.distance
+	end)
 end
 
 local function getClosestNPC()
@@ -147,7 +152,11 @@ end
 
 -- ===== M1 SYSTEM =====
 local Attacking = false
-local WeaponInfoFolder = script:WaitForChild("WeaponInfoFolder")
+local WeaponInfoFolder = script:FindFirstChild("WeaponInfoFolder")
+
+if not WeaponInfoFolder then
+	warn("[AUTOFARM] WeaponInfoFolder não encontrado, M1 desativado.")
+end
 
 local function CanAttack()
 	if _G.FistDisabled or Attacking or _G.GCD then return end
@@ -161,6 +170,7 @@ local function CanAttack()
 end
 
 local function AttemptM1()
+	if not WeaponInfoFolder then return end
 	if not CanAttack() then return end
 
 	local char = player.Character
@@ -177,18 +187,20 @@ local function AttemptM1()
 		if w then weapon = w end
 	end
 
-	local animFolder = weapon:FindFirstChild("FanAnimations")
-	if animFolder then
-		local anim = animFolder["P_".._G.Clicked]
-		if anim then hum:LoadAnimation(anim):Play() end
-	end
+	if weapon then
+		local animFolder = weapon:FindFirstChild("FanAnimations")
+		if animFolder then
+			local anim = animFolder:FindFirstChild("P_".._G.Clicked)
+			if anim then hum:LoadAnimation(anim):Play() end
+		end
 
-	CombatEvent:FireServer(_G.Clicked, weapon, root.CFrame, true, weapon)
+		CombatEvent:FireServer(_G.Clicked, weapon, root.CFrame, true, weapon)
+	end
 
 	_G.Clicked += 1
 	if _G.Clicked > 4 then _G.Clicked = 1 end
 
-	task.delay(0.4,function()
+	task.delay(0.4, function()
 		Attacking = false
 		_G.GCD = false
 	end)
@@ -197,16 +209,18 @@ end
 -- ===== AUTOFARM =====
 local function autofarmLoop()
 	if not state.autofarmEnabled then return end
+
 	local char = player.Character
 	local root = char and char:FindFirstChild("HumanoidRootPart")
 	if not root then return end
 
 	local data = getClosestNPC()
 	if not data then return end
+
 	state.lockedNPC = data.model
 
 	root.CFrame =
-		data.root.Position
+		data.root.CFrame
 		- data.root.CFrame.LookVector * CONFIG.BACK_DISTANCE
 		+ Vector3.new(0, CONFIG.HEIGHT_OFFSET, 0)
 end
@@ -230,9 +244,11 @@ end
 -- ===== SPEED =====
 local function speedLoop()
 	if not state.speedEnabled then return end
+
 	local char = player.Character
 	local hum = char and char:FindFirstChild("Humanoid")
 	local root = char and char:FindFirstChild("HumanoidRootPart")
+
 	if hum and root and hum.MoveDirection.Magnitude > 0 then
 		root.AssemblyLinearVelocity =
 			hum.MoveDirection.Unit * state.speedValue +
@@ -244,7 +260,9 @@ end
 UserInputService.JumpRequest:Connect(function()
 	if state.infiniteJumpEnabled then
 		local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-		if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+		if hum then
+			hum:ChangeState(Enum.HumanoidStateType.Jumping)
+		end
 	end
 end)
 
@@ -253,6 +271,7 @@ autofarmBtn.MouseButton1Click:Connect(function()
 	state.autofarmEnabled = not state.autofarmEnabled
 	autofarmBtn.Text = state.autofarmEnabled and "🤖 Autofarm: ON" or "🤖 Autofarm: OFF"
 	disconnect("autofarm")
+
 	if state.autofarmEnabled then
 		state.connections.autofarm = RunService.Heartbeat:Connect(autofarmLoop)
 	end
@@ -262,6 +281,7 @@ auraBtn.MouseButton1Click:Connect(function()
 	state.killAuraEnabled = not state.killAuraEnabled
 	auraBtn.Text = state.killAuraEnabled and "🗡️ Kill Aura: ON" or "🗡️ Kill Aura: OFF"
 	disconnect("aura")
+
 	if state.killAuraEnabled then
 		state.connections.aura = RunService.Heartbeat:Connect(killAuraLoop)
 	end
@@ -276,6 +296,7 @@ speedBtn.MouseButton1Click:Connect(function()
 	state.speedEnabled = not state.speedEnabled
 	speedBtn.Text = state.speedEnabled and "💨 Speed: ON" or "💨 Speed: OFF"
 	state.speedValue = tonumber(speedBox.Text) or state.speedValue
+
 	disconnect("speed")
 	if state.speedEnabled then
 		state.connections.speed = RunService.Heartbeat:Connect(speedLoop)
@@ -288,7 +309,7 @@ guiKeyBtn.MouseButton1Click:Connect(function()
 end)
 
 -- ===== INPUT =====
-UserInputService.InputBegan:Connect(function(input,gp)
+UserInputService.InputBegan:Connect(function(input, gp)
 	if gp then return end
 
 	if state.waitingForKey and input.UserInputType == Enum.UserInputType.Keyboard then
