@@ -1,5 +1,6 @@
 -- ===== FFRE GUI V2 - STYLED EDITION =====
 -- Design inspirado em NS HUB
+-- Sistema de Configurações Completo
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -21,7 +22,8 @@ local CONFIG = {
 	CHAR_CACHE_UPDATE = 0.5,
 	HEALTH_CHECK_INTERVAL = 0.1,
 	GUI_NAME = "FFREStyledGui",
-	SAVE_FILE_NAME = "FFRE_Styled_Settings.json"
+	CONFIGS_FOLDER = "FFRE_Configs/",
+	DEFAULT_CONFIG_NAME = "Default"
 }
 
 -- ===== NPC FOLDER =====
@@ -59,14 +61,78 @@ local state = {
 	},
 	lastSpeedApply = 0,
 	lastHealthSet = 0,
-	currentPage = "combat"
+	currentPage = "combat",
+	selectedConfig = nil,
+	autoLoadConfig = nil
 }
 
--- ===== SAVE/LOAD SYSTEM =====
-local function saveSettings()
-	if not writefile then return end
+-- ===== CONFIGURATION SYSTEM =====
+local ConfigSystem = {}
+
+function ConfigSystem.ensureFolder()
+	if not isfolder then return false end
+	if not isfolder(CONFIG.CONFIGS_FOLDER) then
+		makefolder(CONFIG.CONFIGS_FOLDER)
+	end
+	return true
+end
+
+function ConfigSystem.getConfigList()
+	if not ConfigSystem.ensureFolder() then return {} end
 	
-	local settings = {
+	local configs = {}
+	local files = listfiles(CONFIG.CONFIGS_FOLDER)
+	
+	for _, file in ipairs(files) do
+		local name = file:match("([^/]+)%.json$")
+		if name then
+			table.insert(configs, name)
+		end
+	end
+	
+	table.sort(configs)
+	return configs
+end
+
+function ConfigSystem.saveConfig(name, settings)
+	if not ConfigSystem.ensureFolder() then return false, "File system not available" end
+	
+	local success, err = pcall(function()
+		local fullPath = CONFIG.CONFIGS_FOLDER .. name .. ".json"
+		local data = HttpService:JSONEncode(settings)
+		writefile(fullPath, data)
+	end)
+	
+	return success, err
+end
+
+function ConfigSystem.loadConfig(name)
+	if not ConfigSystem.ensureFolder() then return nil end
+	
+	local fullPath = CONFIG.CONFIGS_FOLDER .. name .. ".json"
+	if not isfile(fullPath) then return nil end
+	
+	local success, data = pcall(function()
+		local content = readfile(fullPath)
+		return HttpService:JSONDecode(content)
+	end)
+	
+	return success and data or nil
+end
+
+function ConfigSystem.deleteConfig(name)
+	if not ConfigSystem.ensureFolder() then return false end
+	
+	local fullPath = CONFIG.CONFIGS_FOLDER .. name .. ".json"
+	if isfile(fullPath) then
+		delfile(fullPath)
+		return true
+	end
+	return false
+end
+
+function ConfigSystem.getCurrentSettings()
+	return {
 		speedValue = state.speedValue,
 		m1ClickDelay = state.m1ClickDelay,
 		guiToggleKey = state.guiToggleKey.Name,
@@ -74,28 +140,44 @@ local function saveSettings()
 		godModeEnabled = state.godModeEnabled,
 		speedEnabled = state.speedEnabled,
 		infiniteJumpEnabled = state.infiniteJumpEnabled,
-		m1MacroEnabled = state.m1MacroEnabled
+		m1MacroEnabled = state.m1MacroEnabled,
+		timestamp = os.date("%Y-%m-%d %H:%M:%S")
 	}
-	
-	local success, err = pcall(function()
-		writefile(CONFIG.SAVE_FILE_NAME, HttpService:JSONEncode(settings))
-	end)
-	
-	if not success then
-		warn("[SAVE] Failed:", err)
-	end
 end
 
-local function loadSettings()
-	if not readfile or not isfile then return nil end
-	if not isfile(CONFIG.SAVE_FILE_NAME) then return nil end
+function ConfigSystem.applySettings(settings)
+	if not settings then return end
 	
-	local success, result = pcall(function()
-		local data = readfile(CONFIG.SAVE_FILE_NAME)
-		return HttpService:JSONDecode(data)
-	end)
+	-- Apply values
+	state.speedValue = settings.speedValue or state.speedValue
+	state.m1ClickDelay = settings.m1ClickDelay or state.m1ClickDelay
 	
-	return success and result or nil
+	-- Apply toggles
+	if toggleUpdateFunctions then
+		if toggleUpdateFunctions.godMode then
+			toggleUpdateFunctions.godMode(settings.godModeEnabled == true)
+		end
+		if toggleUpdateFunctions.autofarm then
+			toggleUpdateFunctions.autofarm(settings.autofarmEnabled == true)
+		end
+		if toggleUpdateFunctions.speed then
+			toggleUpdateFunctions.speed(settings.speedEnabled == true)
+		end
+		if toggleUpdateFunctions.infiniteJump then
+			toggleUpdateFunctions.infiniteJump(settings.infiniteJumpEnabled == true)
+		end
+		if toggleUpdateFunctions.m1Macro then
+			toggleUpdateFunctions.m1Macro(settings.m1MacroEnabled == true)
+		end
+	end
+	
+	-- Update GUI key
+	local keyCode = settings.guiToggleKey and Enum.KeyCode[settings.guiToggleKey]
+	if keyCode then
+		state.guiToggleKey = keyCode
+	end
+	
+	return true
 end
 
 -- ===== UTILS =====
@@ -164,7 +246,6 @@ end
 
 -- ===== M1 MACRO =====
 local function simulateMouseClick()
-	-- Simulate mouse click
 	local virtualInput = game:GetService("VirtualInputManager")
 	virtualInput:SendMouseButtonEvent(0, 0, 0, true, game, 1)
 	task.wait(0.01)
@@ -253,8 +334,8 @@ gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 -- Main Frame
 local mainFrame = Instance.new("Frame", gui)
 mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2_new(0, 650, 0, 420)
-mainFrame.Position = UDim2_new(0.5, -325, 0.5, -210)
+mainFrame.Size = UDim2_new(0, 700, 0, 500)
+mainFrame.Position = UDim2_new(0.5, -350, 0.5, -250)
 mainFrame.BackgroundColor3 = Color3_fromRGB(15, 15, 20)
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
@@ -374,9 +455,9 @@ local function createSidebarButton(text, icon, pageName)
 		if pageName == "combat" then
 			contentTitle.Text = "|| COMBAT"
 			subtitle.Text = "⚡ Advanced Combat Features"
-		elseif pageName == "settings" then
-			contentTitle.Text = "|| SETTINGS"
-			subtitle.Text = "⚙️ Configuration Options"
+		elseif pageName == "configs" then
+			contentTitle.Text = "|| CONFIGURATIONS"
+			subtitle.Text = "⚙️ Manage Your Settings"
 		end
 	end)
 	
@@ -393,7 +474,7 @@ end
 
 -- Create sidebar buttons
 createSidebarButton("COMBAT", "⚔️", "combat")
-createSidebarButton("SETTINGS", "⚙️", "settings")
+createSidebarButton("CONFIGS", "⚙️", "configs")
 
 -- Content Area
 local contentArea = Instance.new("Frame", mainFrame)
@@ -425,8 +506,9 @@ subtitle.TextSize = 12
 subtitle.TextColor3 = Color3_fromRGB(150, 150, 160)
 subtitle.TextXAlignment = Enum.TextXAlignment.Left
 
--- Scrolling Frame for options
+-- Scrolling Frame for combat options
 local scrollFrame = Instance.new("ScrollingFrame", contentArea)
+scrollFrame.Name = "CombatScroll"
 scrollFrame.Size = UDim2_new(1, -10, 1, -60)
 scrollFrame.Position = UDim2_new(0, 0, 0, 55)
 scrollFrame.BackgroundTransparency = 1
@@ -610,7 +692,7 @@ end
 -- Store toggle update functions
 local toggleUpdateFunctions = {}
 
--- ===== CREATE UI ELEMENTS =====
+-- ===== CREATE COMBAT UI ELEMENTS =====
 
 -- God Mode Toggle
 local godToggle = createToggle(scrollFrame, "God Mode", "Become invincible with infinite health", function(enabled)
@@ -707,104 +789,401 @@ infoText.TextXAlignment = Enum.TextXAlignment.Left
 infoText.TextYAlignment = Enum.TextYAlignment.Top
 infoText.TextWrapped = true
 
--- ===== SETTINGS PAGE CONTENT =====
-local settingsContainer = Instance.new("Frame", contentArea)
-settingsContainer.Size = UDim2_new(1, -10, 1, -60)
-settingsContainer.Position = UDim2_new(0, 0, 0, 55)
-settingsContainer.BackgroundTransparency = 1
-settingsContainer.Visible = false
+-- ===== CONFIGURATIONS PAGE =====
+local configsContainer = Instance.new("Frame", contentArea)
+configsContainer.Name = "ConfigsContainer"
+configsContainer.Size = UDim2_new(1, -10, 1, -60)
+configsContainer.Position = UDim2_new(0, 0, 0, 55)
+configsContainer.BackgroundTransparency = 1
+configsContainer.Visible = false
 
-local settingsLayout = Instance.new("UIListLayout", settingsContainer)
-settingsLayout.Padding = UDim.new(0, 8)
-settingsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+local configsScroll = Instance.new("ScrollingFrame", configsContainer)
+configsScroll.Size = UDim2_new(1, 0, 1, 0)
+configsScroll.BackgroundTransparency = 1
+configsScroll.BorderSizePixel = 0
+configsScroll.ScrollBarThickness = 4
+configsScroll.ScrollBarImageColor3 = Color3_fromRGB(100, 80, 150)
+configsScroll.CanvasSize = UDim2_new(0, 0, 0, 0)
+configsScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 
--- Save/Load Settings
-local saveLoadContainer = Instance.new("Frame", settingsContainer)
-saveLoadContainer.Size = UDim2_new(1, -5, 0, 120)
-saveLoadContainer.BackgroundColor3 = Color3_fromRGB(20, 20, 28)
-saveLoadContainer.BorderSizePixel = 0
+local configsLayout = Instance.new("UIListLayout", configsScroll)
+configsLayout.Padding = UDim.new(0, 8)
+configsLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
-local saveLoadCorner = Instance.new("UICorner", saveLoadContainer)
-saveLoadCorner.CornerRadius = UDim.new(0, 8)
-
-local saveLoadTitle = Instance.new("TextLabel", saveLoadContainer)
-saveLoadTitle.Size = UDim2_new(1, -20, 0, 20)
-saveLoadTitle.Position = UDim2_new(0, 12, 0, 10)
-saveLoadTitle.BackgroundTransparency = 1
-saveLoadTitle.Text = "💾 Settings Management"
-saveLoadTitle.Font = Enum.Font.GothamBold
-saveLoadTitle.TextSize = 14
-saveLoadTitle.TextColor3 = Color3_white
-saveLoadTitle.TextXAlignment = Enum.TextXAlignment.Left
-
--- Save Button
-local saveBtn = Instance.new("TextButton", saveLoadContainer)
-saveBtn.Size = UDim2_new(0, 120, 0, 35)
-saveBtn.Position = UDim2_new(0, 12, 0, 40)
-saveBtn.BackgroundColor3 = Color3_fromRGB(80, 120, 200)
-saveBtn.Text = "Save Settings"
-saveBtn.Font = Enum.Font.GothamBold
-saveBtn.TextSize = 13
-saveBtn.TextColor3 = Color3_white
-
-local saveCorner = Instance.new("UICorner", saveBtn)
-saveCorner.CornerRadius = UDim.new(0, 6)
-
-saveBtn.MouseButton1Click:Connect(function()
-	saveSettings()
-	saveBtn.Text = "✅ Saved!"
-	task.delay(2, function()
-		saveBtn.Text = "Save Settings"
+-- Function to create styled input field
+local function createInputField(parent, text, placeholder)
+	local container = Instance.new("Frame", parent)
+	container.Size = UDim2_new(1, -5, 0, 70)
+	container.BackgroundColor3 = Color3_fromRGB(20, 20, 28)
+	container.BorderSizePixel = 0
+	
+	local corner = Instance.new("UICorner", container)
+	corner.CornerRadius = UDim.new(0, 8)
+	
+	local label = Instance.new("TextLabel", container)
+	label.Size = UDim2_new(1, -20, 0, 20)
+	label.Position = UDim2_new(0, 12, 0, 10)
+	label.BackgroundTransparency = 1
+	label.Text = text
+	label.Font = Enum.Font.GothamBold
+	label.TextSize = 14
+	label.TextColor3 = Color3_white
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	
+	local textBox = Instance.new("TextBox", container)
+	textBox.Size = UDim2_new(1, -24, 0, 35)
+	textBox.Position = UDim2_new(0, 12, 0, 30)
+	textBox.BackgroundColor3 = Color3_fromRGB(30, 30, 40)
+	textBox.TextColor3 = Color3_white
+	textBox.Font = Enum.Font.Gotham
+	textBox.TextSize = 13
+	textBox.PlaceholderText = placeholder
+	textBox.ClearTextOnFocus = false
+	
+	local textBoxCorner = Instance.new("UICorner", textBox)
+	textBoxCorner.CornerRadius = UDim.new(0, 6)
+	
+	-- Hover effect
+	textBox.Focused:Connect(function()
+		TweenService:Create(textBox, TweenInfo.new(0.2), {BackgroundColor3 = Color3_fromRGB(40, 40, 50)}):Play()
 	end)
+	
+	textBox.FocusLost:Connect(function()
+		TweenService:Create(textBox, TweenInfo.new(0.2), {BackgroundColor3 = Color3_fromRGB(30, 30, 40)}):Play()
+	end)
+	
+	return container, textBox
+end
+
+-- Function to create styled button
+local function createConfigButton(parent, text, color)
+	local btn = Instance.new("TextButton", parent)
+	btn.Size = UDim2_new(1, -5, 0, 45)
+	btn.BackgroundColor3 = color
+	btn.Text = text
+	btn.Font = Enum.Font.GothamBold
+	btn.TextSize = 14
+	btn.TextColor3 = Color3_white
+	btn.AutoButtonColor = false
+	
+	local corner = Instance.new("UICorner", btn)
+	corner.CornerRadius = UDim.new(0, 8)
+	
+	-- Hover effects
+	btn.MouseEnter:Connect(function()
+		TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Color3_fromRGB(
+			math.min(color.R * 255 + 20, 255)/255,
+			math.min(color.G * 255 + 20, 255)/255,
+			math.min(color.B * 255 + 20, 255)/255
+		)}):Play()
+	end)
+	
+	btn.MouseLeave:Connect(function()
+		TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = color}):Play()
+	end)
+	
+	btn.MouseButton1Click:Connect(function()
+		TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = Color3_fromRGB(
+			math.min(color.R * 255 + 30, 255)/255,
+			math.min(color.G * 255 + 30, 255)/255,
+			math.min(color.B * 255 + 30, 255)/255
+		)}):Play()
+		task.wait(0.1)
+		TweenService:Create(btn, TweenInfo.new(0.1), {BackgroundColor3 = color}):Play()
+	end)
+	
+	return btn
+end
+
+-- Function to update config list
+local function updateConfigList(scrollingFrame)
+	-- Clear existing config list
+	if scrollingFrame:FindFirstChild("ConfigListContainer") then
+		scrollingFrame:FindFirstChild("ConfigListContainer"):Destroy()
+	end
+	
+	local configListContainer = Instance.new("Frame", scrollingFrame)
+	configListContainer.Name = "ConfigListContainer"
+	configListContainer.Size = UDim2_new(1, -5, 0, 150)
+	configListContainer.BackgroundColor3 = Color3_fromRGB(20, 20, 28)
+	configListContainer.BorderSizePixel = 0
+	
+	local corner = Instance.new("UICorner", configListContainer)
+	corner.CornerRadius = UDim.new(0, 8)
+	
+	local title = Instance.new("TextLabel", configListContainer)
+	title.Size = UDim2_new(1, -20, 0, 20)
+	title.Position = UDim2_new(0, 12, 0, 10)
+	title.BackgroundTransparency = 1
+	title.Text = "📁 Config List"
+	title.Font = Enum.Font.GothamBold
+	title.TextSize = 14
+	title.TextColor3 = Color3_white
+	title.TextXAlignment = Enum.TextXAlignment.Left
+	
+	-- Get configs
+	local configs = ConfigSystem.getConfigList()
+	
+	if #configs == 0 then
+		local emptyLabel = Instance.new("TextLabel", configListContainer)
+		emptyLabel.Size = UDim2_new(1, -20, 0, 100)
+		emptyLabel.Position = UDim2_new(0, 12, 0, 35)
+		emptyLabel.BackgroundTransparency = 1
+		emptyLabel.Text = "No configurations saved yet.\nCreate one using 'Create Config'."
+		emptyLabel.Font = Enum.Font.Gotham
+		emptyLabel.TextSize = 12
+		emptyLabel.TextColor3 = Color3_fromRGB(150, 150, 160)
+		emptyLabel.TextXAlignment = Enum.TextXAlignment.Center
+		emptyLabel.TextYAlignment = Enum.TextYAlignment.Center
+		emptyLabel.TextWrapped = true
+		
+		state.selectedConfig = nil
+	else
+		-- Config selection frame
+		local selectionFrame = Instance.new("ScrollingFrame", configListContainer)
+		selectionFrame.Size = UDim2_new(1, -24, 0, 100)
+		selectionFrame.Position = UDim2_new(0, 12, 0, 35)
+		selectionFrame.BackgroundColor3 = Color3_fromRGB(30, 30, 40)
+		selectionFrame.BorderSizePixel = 0
+		selectionFrame.ScrollBarThickness = 4
+		selectionFrame.ScrollBarImageColor3 = Color3_fromRGB(100, 80, 150)
+		selectionFrame.CanvasSize = UDim2_new(0, 0, 0, 0)
+		selectionFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+		
+		local selectionLayout = Instance.new("UIListLayout", selectionFrame)
+		selectionLayout.Padding = UDim.new(0, 2)
+		selectionLayout.SortOrder = Enum.SortOrder.LayoutOrder
+		
+		for _, configName in ipairs(configs) do
+			local configBtn = Instance.new("TextButton", selectionFrame)
+			configBtn.Size = UDim2_new(1, -8, 0, 30)
+			configBtn.BackgroundColor3 = configName == state.selectedConfig and 
+				Color3_fromRGB(80, 60, 140) or Color3_fromRGB(40, 40, 50)
+			configBtn.Text = configName
+			configBtn.Font = Enum.Font.Gotham
+			configBtn.TextSize = 12
+			configBtn.TextColor3 = Color3_white
+			configBtn.AutoButtonColor = false
+			
+			local btnCorner = Instance.new("UICorner", configBtn)
+			btnCorner.CornerRadius = UDim.new(0, 4)
+			
+			configBtn.MouseButton1Click:Connect(function()
+				state.selectedConfig = configName
+				updateConfigList(scrollingFrame)
+			end)
+			
+			-- Hover effects
+			configBtn.MouseEnter:Connect(function()
+				if configName ~= state.selectedConfig then
+					TweenService:Create(configBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3_fromRGB(60, 60, 70)}):Play()
+				end
+			end)
+			
+			configBtn.MouseLeave:Connect(function()
+				if configName ~= state.selectedConfig then
+					TweenService:Create(configBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3_fromRGB(40, 40, 50)}):Play()
+				end
+			end)
+		end
+		
+		-- Show selected config
+		if state.selectedConfig then
+			local selectedLabel = Instance.new("TextLabel", configListContainer)
+			selectedLabel.Size = UDim2_new(1, -20, 0, 20)
+			selectedLabel.Position = UDim2_new(0, 12, 0, 140)
+			selectedLabel.BackgroundTransparency = 1
+			selectedLabel.Text = "Selected: " .. state.selectedConfig
+			selectedLabel.Font = Enum.Font.GothamBold
+			selectedLabel.TextSize = 11
+			selectedLabel.TextColor3 = Color3_fromRGB(200, 150, 255)
+			selectedLabel.TextXAlignment = Enum.TextXAlignment.Left
+		end
+	end
+	
+	return configListContainer
+end
+
+-- Function to show message
+local function showMessage(parent, text, color, duration)
+	local message = Instance.new("TextLabel", parent)
+	message.Size = UDim2_new(1, -20, 0, 35)
+	message.Position = UDim2_new(0, 10, 0, 10)
+	message.BackgroundColor3 = Color3_fromRGB(30, 30, 40)
+	message.TextColor3 = color
+	message.Font = Enum.Font.GothamBold
+	message.TextSize = 13
+	message.Text = text
+	message.TextWrapped = true
+	message.ZIndex = 10
+	
+	local corner = Instance.new("UICorner", message)
+	corner.CornerRadius = UDim.new(0, 8)
+	
+	task.delay(duration or 3, function()
+		if message then
+			message:Destroy()
+		end
+	end)
+end
+
+-- Create Configurations UI Elements
+-- 1) Config Name Input
+local configNameContainer, configNameBox = createInputField(configsScroll, "Config Name", "Enter configuration name...")
+
+-- 2) Config List
+local configListContainer = updateConfigList(configsScroll)
+
+-- 3) Create Config Button
+local createConfigBtn = createConfigButton(configsScroll, "➕ Create Config", Color3_fromRGB(80, 120, 200))
+createConfigBtn.MouseButton1Click:Connect(function()
+	local configName = configNameBox.Text:gsub("%s+", " "):gsub("^%s*(.-)%s*$", "%1")
+	
+	if configName == "" then
+		showMessage(configsScroll, "Please enter a configuration name!", Color3_fromRGB(255, 100, 100))
+		return
+	end
+	
+	if configName:match("[^%w%s%-_]") then
+		showMessage(configsScroll, "Invalid name! Use only letters, numbers, spaces, hyphens and underscores.", Color3_fromRGB(255, 100, 100))
+		return
+	end
+	
+	local success, err = ConfigSystem.saveConfig(configName, ConfigSystem.getCurrentSettings())
+	
+	if success then
+		showMessage(configsScroll, "✅ Configuration '" .. configName .. "' saved successfully!", Color3_fromRGB(100, 255, 100))
+		state.selectedConfig = configName
+		updateConfigList(configsScroll)
+		configNameBox.Text = ""
+	else
+		showMessage(configsScroll, "❌ Failed to save: " .. tostring(err), Color3_fromRGB(255, 100, 100))
+	end
 end)
 
--- Load Button
-local loadBtn = Instance.new("TextButton", saveLoadContainer)
-loadBtn.Size = UDim2_new(0, 120, 0, 35)
-loadBtn.Position = UDim2_new(0, 12, 0, 80)
-loadBtn.BackgroundColor3 = Color3_fromRGB(120, 80, 200)
-loadBtn.Text = "Load Settings"
-loadBtn.Font = Enum.Font.GothamBold
-loadBtn.TextSize = 13
-loadBtn.TextColor3 = Color3_white
-
-local loadCorner = Instance.new("UICorner", loadBtn)
-loadCorner.CornerRadius = UDim.new(0, 6)
-
-loadBtn.MouseButton1Click:Connect(function()
-	local settings = loadSettings()
+-- 4) Load Config Button
+local loadConfigBtn = createConfigButton(configsScroll, "📂 Load Config", Color3_fromRGB(120, 80, 200))
+loadConfigBtn.MouseButton1Click:Connect(function()
+	if not state.selectedConfig then
+		showMessage(configsScroll, "Please select a configuration first!", Color3_fromRGB(255, 200, 100))
+		return
+	end
+	
+	local settings = ConfigSystem.loadConfig(state.selectedConfig)
+	
 	if settings then
-		-- Apply loaded settings
-		state.speedValue = settings.speedValue
-		state.m1ClickDelay = settings.m1ClickDelay
-		
-		-- Update toggles
-		if toggleUpdateFunctions.godMode then
-			toggleUpdateFunctions.godMode(settings.godModeEnabled == true)
-		end
-		if toggleUpdateFunctions.autofarm then
-			toggleUpdateFunctions.autofarm(settings.autofarmEnabled == true)
-		end
-		if toggleUpdateFunctions.speed then
-			toggleUpdateFunctions.speed(settings.speedEnabled == true)
-		end
-		if toggleUpdateFunctions.infiniteJump then
-			toggleUpdateFunctions.infiniteJump(settings.infiniteJumpEnabled == true)
-		end
-		if toggleUpdateFunctions.m1Macro then
-			toggleUpdateFunctions.m1Macro(settings.m1MacroEnabled == true)
-		end
-		
-		-- Update GUI key
-		local keyCode = Enum.KeyCode[settings.guiToggleKey]
-		if keyCode then
-			state.guiToggleKey = keyCode
-		end
-		
-		loadBtn.Text = "✅ Loaded!"
-		task.delay(2, function()
-			loadBtn.Text = "Load Settings"
+		ConfigSystem.applySettings(settings)
+		showMessage(configsScroll, "✅ Configuration '" .. state.selectedConfig .. "' loaded successfully!", Color3_fromRGB(100, 255, 100))
+	else
+		showMessage(configsScroll, "❌ Failed to load configuration!", Color3_fromRGB(255, 100, 100))
+	end
+end)
+
+-- 5) Overwrite Config Button
+local overwriteConfigBtn = createConfigButton(configsScroll, "✏️ Overwrite Config", Color3_fromRGB(200, 120, 80))
+overwriteConfigBtn.MouseButton1Click:Connect(function()
+	if not state.selectedConfig then
+		showMessage(configsScroll, "Please select a configuration to overwrite!", Color3_fromRGB(255, 200, 100))
+		return
+	end
+	
+	local success, err = ConfigSystem.saveConfig(state.selectedConfig, ConfigSystem.getCurrentSettings())
+	
+	if success then
+		showMessage(configsScroll, "✅ Configuration '" .. state.selectedConfig .. "' overwritten successfully!", Color3_fromRGB(100, 255, 100))
+	else
+		showMessage(configsScroll, "❌ Failed to overwrite: " .. tostring(err), Color3_fromRGB(255, 100, 100))
+	end
+end)
+
+-- 6) Refresh List Button
+local refreshListBtn = createConfigButton(configsScroll, "🔄 Refresh List", Color3_fromRGB(80, 200, 120))
+refreshListBtn.MouseButton1Click:Connect(function()
+	updateConfigList(configsScroll)
+	showMessage(configsScroll, "✅ Configuration list refreshed!", Color3_fromRGB(100, 255, 100))
+end)
+
+-- 7) Set as Autoload Button and display
+local autoloadContainer = Instance.new("Frame", configsScroll)
+autoloadContainer.Size = UDim2_new(1, -5, 0, 80)
+autoloadContainer.BackgroundColor3 = Color3_fromRGB(20, 20, 28)
+autoloadContainer.BorderSizePixel = 0
+
+local autoloadCorner = Instance.new("UICorner", autoloadContainer)
+autoloadCorner.CornerRadius = UDim.new(0, 8)
+
+local autoloadTitle = Instance.new("TextLabel", autoloadContainer)
+autoloadTitle.Size = UDim2_new(1, -20, 0, 20)
+autoloadTitle.Position = UDim2_new(0, 12, 0, 10)
+autoloadTitle.BackgroundTransparency = 1
+autoloadTitle.Text = "🔧 AutoLoad Settings"
+autoloadTitle.Font = Enum.Font.GothamBold
+autoloadTitle.TextSize = 14
+autoloadTitle.TextColor3 = Color3_white
+autoloadTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+local currentAutoloadLabel = Instance.new("TextLabel", autoloadContainer)
+currentAutoloadLabel.Name = "CurrentAutoload"
+currentAutoloadLabel.Size = UDim2_new(1, -20, 0, 20)
+currentAutoloadLabel.Position = UDim2_new(0, 12, 0, 30)
+currentAutoloadLabel.BackgroundTransparency = 1
+currentAutoloadLabel.Text = "Current autoload config: none"
+currentAutoloadLabel.Font = Enum.Font.Gotham
+currentAutoloadLabel.TextSize = 12
+currentAutoloadLabel.TextColor3 = Color3_fromRGB(180, 180, 190)
+currentAutoloadLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+local setAutoloadBtn = createConfigButton(autoloadContainer, "⭐ Set as Autoload", Color3_fromRGB(200, 180, 80))
+setAutoloadBtn.Size = UDim2_new(0.6, 0, 0, 35)
+setAutoloadBtn.Position = UDim2_new(0.4, 5, 0, 40)
+
+setAutoloadBtn.MouseButton1Click:Connect(function()
+	if not state.selectedConfig then
+		showMessage(configsScroll, "Please select a configuration first!", Color3_fromRGB(255, 200, 100))
+		return
+	end
+	
+	state.autoLoadConfig = state.selectedConfig
+	
+	-- Save autoload preference
+	if writefile then
+		local success = pcall(function()
+			writefile("FFRE_Autoload.txt", state.selectedConfig)
 		end)
+		
+		if success then
+			currentAutoloadLabel.Text = "Current autoload config: " .. state.selectedConfig
+			showMessage(configsScroll, "✅ '" .. state.selectedConfig .. "' set as autoload configuration!", Color3_fromRGB(100, 255, 100))
+		else
+			showMessage(configsScroll, "⚠️ Autoload set but not saved to file", Color3_fromRGB(255, 200, 100))
+		end
+	else
+		currentAutoloadLabel.Text = "Current autoload config: " .. state.selectedConfig
+		showMessage(configsScroll, "✅ '" .. state.selectedConfig .. "' set as autoload configuration!", Color3_fromRGB(100, 255, 100))
+	end
+end)
+
+-- Load autoload config on startup
+task.spawn(function()
+	task.wait(1)
+	if readfile and isfile then
+		if isfile("FFRE_Autoload.txt") then
+			local success, autoloadName = pcall(function()
+				return readfile("FFRE_Autoload.txt")
+			end)
+			
+			if success and autoloadName and autoloadName ~= "" then
+				state.autoLoadConfig = autoloadName
+				currentAutoloadLabel.Text = "Current autoload config: " .. autoloadName
+				
+				-- Auto-load the configuration
+				local settings = ConfigSystem.loadConfig(autoloadName)
+				if settings then
+					ConfigSystem.applySettings(settings)
+					print("[AUTOLOAD] Loaded configuration: " .. autoloadName)
+				end
+			end
+		end
 	end
 end)
 
@@ -861,51 +1240,39 @@ player.CharacterAdded:Connect(function(char)
 	end
 end)
 
--- ===== AUTO-LOAD SETTINGS =====
-task.spawn(function()
-	task.wait(1)
-	local settings = loadSettings()
-	if settings then
-		state.speedValue = settings.speedValue
-		state.m1ClickDelay = settings.m1ClickDelay
-		
-		-- Update GUI key
-		local keyCode = Enum.KeyCode[settings.guiToggleKey]
-		if keyCode then
-			state.guiToggleKey = keyCode
-		end
-	end
-end)
-
 -- ===== PAGE SWITCHING =====
--- Show/hide pages based on selection
 RunService.Heartbeat:Connect(function()
 	if state.currentPage == "combat" then
 		scrollFrame.Visible = true
-		settingsContainer.Visible = false
-	elseif state.currentPage == "settings" then
+		configsContainer.Visible = false
+	elseif state.currentPage == "configs" then
 		scrollFrame.Visible = false
-		settingsContainer.Visible = true
+		configsContainer.Visible = true
 	end
 end)
 
 -- ===== CLEANUP =====
 game:GetService("Players").LocalPlayer.OnTeleport:Connect(function()
 	cleanAllConnections()
-	saveSettings()
 end)
 
-print("═══════════════════════════════════")
+print("═══════════════════════════════════════════════")
 print("  FFRE GUI V2 - STYLED EDITION")
-print("═══════════════════════════════════")
+print("═══════════════════════════════════════════════")
 print("  [✓] Autofarm")
 print("  [✓] God Mode")
 print("  [✓] Speed Boost")
 print("  [✓] Infinite Jump")
 print("  [✓] M1 Macro")
-print("  [✓] Save/Load System")
-print("═══════════════════════════════════")
+print("  [✓] Advanced Configuration System")
+print("═══════════════════════════════════════════════")
 print("  Keybinds:")
 print("  F1 - Toggle GUI")
 print("  F2 - Toggle M1 Macro")
-print("═══════════════════════════════════")
+print("═══════════════════════════════════════════════")
+print("  Config System Features:")
+print("  • Create, Load, Overwrite configurations")
+print("  • Config list with selection")
+print("  • Set autoload configuration")
+print("  • File-based storage system")
+print("═══════════════════════════════════════════════")
