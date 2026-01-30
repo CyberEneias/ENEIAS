@@ -1,4 +1,4 @@
--- ===== AUTOFARM ULTRA-LEVE + GOD MODE + SPEED + INFINITE JUMP + KILL AURA =====
+-- ===== AUTOFARM ULTRA-LEVE + GOD MODE + SPEED + INFINITE JUMP + M1 MACRO =====
 -- ===== VERSION 2.0 - OPTIMIZED & ENHANCED =====
 
 local Players = game:GetService("Players")
@@ -6,7 +6,6 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
 local TweenService = game:GetService("TweenService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local player = Players.LocalPlayer
 if not player then return end
@@ -19,8 +18,7 @@ local CONFIG = {
 	UPDATE_INTERVAL = 1,
 	GUI_NAME = "InfoExperienciaGui",
 	NPC_SCAN_INTERVAL = 0.3,
-	KILL_AURA_RANGE = 15,
-	KILL_AURA_DELAY = 0.4,
+	M1_CLICK_DELAY = 0.15,
 	HEALTH_CHECK_INTERVAL = 0.1,
 	CHAR_CACHE_UPDATE = 0.5,
 	SAVE_FILE_NAME = "FFRE_Settings.json"
@@ -28,10 +26,6 @@ local CONFIG = {
 
 -- ===== NPC FOLDER =====
 local AliveFolder = workspace:WaitForChild("Alive")
-
--- ===== COMBAT SYSTEM =====
-local CombatEvent = ReplicatedStorage:WaitForChild("Events"):WaitForChild("CombatEvent")
-local ResetComboEvent = ReplicatedStorage.Events:WaitForChild("ResetComboEvent")
 
 -- ===== CACHE (MELHORIA #1: Object Pooling para valores constantes) =====
 local Vector3_new = Vector3.new
@@ -41,11 +35,6 @@ local UDim2_new = UDim2.new
 local Color3_fromRGB = Color3.fromRGB
 local Color3_white = Color3.new(1,1,1)
 
--- ===== GLOBAL COMBAT STATE =====
-_G.Clicked = _G.Clicked or 1
-_G.GCD = _G.GCD or false
-_G.FistDisabled = _G.FistDisabled or false
-
 -- ===== STATE =====
 local state = {
 	-- Features
@@ -53,21 +42,19 @@ local state = {
 	infiniteJumpEnabled = false,
 	speedEnabled = false,
 	godModeEnabled = false,
-	killAuraEnabled = false,
+	m1MacroEnabled = false,
 	
 	-- Values
 	speedValue = 160,
-	killAuraRange = CONFIG.KILL_AURA_RANGE,
+	m1ClickDelay = CONFIG.M1_CLICK_DELAY,
 	
 	-- Cache
 	lockedNPC = nil,
 	lastNPCScan = 0,
 	npcCache = {},
 	
-	-- Combat
-	attacking = false,
-	usingMove = false,
-	lastAttackTime = 0,
+	-- M1 Macro
+	lastM1Click = 0,
 	
 	-- Connections
 	connections = {},
@@ -95,13 +82,13 @@ local SaveSystem = {}
 function SaveSystem.getDefaultSettings()
 	return {
 		speedValue = 160,
-		killAuraRange = 15,
+		m1ClickDelay = 0.15,
 		guiToggleKey = "F1",
 		autofarmEnabled = false,
 		godModeEnabled = false,
 		speedEnabled = false,
 		infiniteJumpEnabled = false,
-		killAuraEnabled = false
+		m1MacroEnabled = false
 	}
 end
 
@@ -111,13 +98,13 @@ function SaveSystem.save()
 		
 		local settings = {
 			speedValue = state.speedValue,
-			killAuraRange = state.killAuraRange,
+			m1ClickDelay = state.m1ClickDelay,
 			guiToggleKey = state.guiToggleKey.Name,
 			autofarmEnabled = state.autofarmEnabled,
 			godModeEnabled = state.godModeEnabled,
 			speedEnabled = state.speedEnabled,
 			infiniteJumpEnabled = state.infiniteJumpEnabled,
-			killAuraEnabled = state.killAuraEnabled
+			m1MacroEnabled = state.m1MacroEnabled
 		}
 		
 		writefile(CONFIG.SAVE_FILE_NAME, game:GetService("HttpService"):JSONEncode(settings))
@@ -251,7 +238,7 @@ local autofarmBtn = createButton("🤖 Autofarm: OFF", 60)
 local godBtn      = createButton("🛡️ God Mode: OFF", 120)
 local jumpBtn     = createButton("🚀 Infinite Jump: OFF", 180)
 local speedBtn    = createButton("💨 Speed: OFF", 240)
-local killAuraBtn = createButton("⚔️ Kill Aura: OFF", 300)
+local m1MacroBtn  = createButton("👊 M1 Macro: OFF", 300)
 
 -- Speed input
 local speedBox = Instance.new("TextBox", frame)
@@ -266,18 +253,18 @@ speedBox.PlaceholderText = "Speed"
 local speedCorner = Instance.new("UICorner", speedBox)
 speedCorner.CornerRadius = UDim.new(0,6)
 
--- Kill Aura Range input
-local killAuraBox = Instance.new("TextBox", frame)
-killAuraBox.Size = UDim2_new(0, 100, 0, 35)
-killAuraBox.Position = UDim2_new(1, -130, 0, 305)
-killAuraBox.Text = tostring(state.killAuraRange)
-killAuraBox.Font = Enum.Font.GothamBold
-killAuraBox.TextSize = 14
-killAuraBox.BackgroundColor3 = Color3_fromRGB(50,70,90)
-killAuraBox.TextColor3 = Color3_white
-killAuraBox.PlaceholderText = "Range"
-local killAuraCorner = Instance.new("UICorner", killAuraBox)
-killAuraCorner.CornerRadius = UDim.new(0,6)
+-- M1 Delay input
+local m1DelayBox = Instance.new("TextBox", frame)
+m1DelayBox.Size = UDim2_new(0, 100, 0, 35)
+m1DelayBox.Position = UDim2_new(1, -130, 0, 305)
+m1DelayBox.Text = tostring(state.m1ClickDelay)
+m1DelayBox.Font = Enum.Font.GothamBold
+m1DelayBox.TextSize = 14
+m1DelayBox.BackgroundColor3 = Color3_fromRGB(50,70,90)
+m1DelayBox.TextColor3 = Color3_white
+m1DelayBox.PlaceholderText = "Delay"
+local m1DelayCorner = Instance.new("UICorner", m1DelayBox)
+m1DelayCorner.CornerRadius = UDim.new(0,6)
 
 -- GUI Key button
 local guiKeyBtn = createButton("GUI Key (F1)", 360, 260)
@@ -326,135 +313,19 @@ local function findClosestNPC()
 	return state.npcCache[1] and state.npcCache[1].model
 end
 
--- ===== KILL AURA SYSTEM =====
-local function canAttack()
-	if _G.FistDisabled then return false end
-	if state.attacking then return false end
-	if _G.GCD then return false end
-	
-	local _, _, char = getCharComponents()
-	if not char then return false end
-	if char:FindFirstChildOfClass("Tool") then return false end
-	if char:FindFirstChild("Stun") then return false end
-	if char:FindFirstChild("Parried") then return false end
-	if char:FindFirstChild("Knocked") then return false end
-	if char:FindFirstChild("TempKnocked") then return false end
-	if char:FindFirstChild("Carried") then return false end
-	if char:FindFirstChild("UsingMove") then return false end
-	
-	return true
-end
-
-local function getWeaponInfo()
-	-- Tenta encontrar WeaponInfoFolder no script ou em ReplicatedStorage
-	local weaponFolder = nil
-	
-	-- Procura em vários locais possíveis
-	if script:FindFirstChild("WeaponInfoFolder") then
-		weaponFolder = script.WeaponInfoFolder
-	elseif ReplicatedStorage:FindFirstChild("WeaponInfoFolder") then
-		weaponFolder = ReplicatedStorage.WeaponInfoFolder
-	end
-	
-	if not weaponFolder then
-		warn("[KILL AURA] WeaponInfoFolder not found, using basic attack")
-		return nil
-	end
-	
-	local _, _, char = getCharComponents()
-	if not char then return nil end
-	
-	local weapon = weaponFolder:FindFirstChild("Fist")
-	
-	if char:FindFirstChild("WeaponEquiped") then
-		local weaponName = char.WeaponEquiped.Value
-		if weaponFolder:FindFirstChild(weaponName) then
-			weapon = weaponFolder[weaponName]
-		end
-	end
-	
-	return weapon
-end
-
-local function performAttack()
-	if not canAttack() then return end
-	
-	local root, humanoid, char = getCharComponents()
-	if not humanoid or not root then return end
-	
-	state.attacking = true
-	state.usingMove = true
-	_G.GCD = true
-	
-	local weapon = getWeaponInfo()
-	
-	-- Se tem weapon info, toca animação
-	if weapon then
-		local animFolder = weapon:FindFirstChild("FanAnimations")
-		if animFolder then
-			local anim
-			if _G.Clicked == 1 then anim = animFolder.P_1
-			elseif _G.Clicked == 2 then anim = animFolder.P_2
-			elseif _G.Clicked == 3 then anim = animFolder.P_3
-			elseif _G.Clicked == 4 then anim = animFolder.P_4
-			end
-			
-			if anim then
-				humanoid:LoadAnimation(anim):Play()
-			end
-		end
-	end
-	
-	-- Dispara evento de combate
-	pcall(function()
-		CombatEvent:FireServer(
-			_G.Clicked,
-			weapon,
-			root.CFrame,
-			true,
-			weapon
-		)
-	end)
-	
-	-- Avança combo
-	_G.Clicked = _G.Clicked + 1
-	if _G.Clicked > 4 then
-		_G.Clicked = 1
-	end
-	
-	-- Reset flags
-	task.delay(CONFIG.KILL_AURA_DELAY, function()
-		state.attacking = false
-		state.usingMove = false
-		_G.GCD = false
-	end)
-	
-	state.lastAttackTime = tick()
-end
-
-local function killAuraLoop()
-	if not state.killAuraEnabled then return end
-	if not canAttack() then return end
+-- ===== M1 MACRO SYSTEM (SIMPLES E LEVE) =====
+local function m1MacroLoop()
+	if not state.m1MacroEnabled then return end
 	
 	local now = tick()
-	if now - state.lastAttackTime < CONFIG.KILL_AURA_DELAY then return end
+	if now - state.lastM1Click < state.m1ClickDelay then return end
 	
-	local root, _, _ = getCharComponents()
-	if not root then return end
+	-- Simula clique do mouse
+	pcall(function()
+		mouse1click()
+	end)
 	
-	-- Atualiza cache de NPCs
-	if now - state.lastNPCScan > CONFIG.NPC_SCAN_INTERVAL then
-		updateNPCCache()
-		state.lastNPCScan = now
-	end
-	
-	-- Encontra NPC mais próximo dentro do range
-	for _, npcData in ipairs(state.npcCache) do
-		if npcData.distance <= state.killAuraRange then
-			performAttack()
-			break
-		end
-	end
+	state.lastM1Click = now
 end
 
 -- ===== AUTOFARM LOOP =====
@@ -575,16 +446,16 @@ speedBtn.MouseButton1Click:Connect(function()
 	end
 end)
 
-killAuraBtn.MouseButton1Click:Connect(function()
-	state.killAuraEnabled = not state.killAuraEnabled
-	killAuraBtn.Text = state.killAuraEnabled and "⚔️ Kill Aura: ON" or "⚔️ Kill Aura: OFF"
+m1MacroBtn.MouseButton1Click:Connect(function()
+	state.m1MacroEnabled = not state.m1MacroEnabled
+	m1MacroBtn.Text = state.m1MacroEnabled and "👊 M1 Macro: ON" or "👊 M1 Macro: OFF"
 
-	if state.killAuraEnabled then
-		state.killAuraRange = tonumber(killAuraBox.Text) or state.killAuraRange
-		disconnectConnection("killaura")
-		state.connections.killaura = RunService.Heartbeat:Connect(killAuraLoop)
+	if state.m1MacroEnabled then
+		state.m1ClickDelay = tonumber(m1DelayBox.Text) or state.m1ClickDelay
+		disconnectConnection("m1macro")
+		state.connections.m1macro = RunService.Heartbeat:Connect(m1MacroLoop)
 	else
-		disconnectConnection("killaura")
+		disconnectConnection("m1macro")
 	end
 end)
 
@@ -603,10 +474,10 @@ loadBtn.MouseButton1Click:Connect(function()
 	
 	-- Apply loaded settings
 	state.speedValue = settings.speedValue
-	state.killAuraRange = settings.killAuraRange
+	state.m1ClickDelay = settings.m1ClickDelay
 	
 	speedBox.Text = tostring(state.speedValue)
-	killAuraBox.Text = tostring(state.killAuraRange)
+	m1DelayBox.Text = tostring(state.m1ClickDelay)
 	
 	-- Load toggle key
 	local keyCode = Enum.KeyCode[settings.guiToggleKey]
@@ -652,11 +523,6 @@ UserInputService.InputBegan:Connect(function(input, processed)
 	end
 end)
 
--- ===== RESET COMBO EVENT =====
-ResetComboEvent.OnClientEvent:Connect(function()
-	_G.Clicked = 1
-end)
-
 -- ===== CHARACTER EVENTS =====
 player.CharacterAdded:Connect(function(char)
 	invalidateCharCache()
@@ -667,9 +533,9 @@ player.CharacterAdded:Connect(function(char)
 		disconnectConnection("speed")
 		state.connections.speed = RunService.Heartbeat:Connect(speedLoop)
 	end
-	if state.killAuraEnabled then
-		disconnectConnection("killaura")
-		state.connections.killaura = RunService.Heartbeat:Connect(killAuraLoop)
+	if state.m1MacroEnabled then
+		disconnectConnection("m1macro")
+		state.connections.m1macro = RunService.Heartbeat:Connect(m1MacroLoop)
 	end
 end)
 
@@ -680,9 +546,9 @@ task.spawn(function()
 	
 	-- Silent load on startup
 	state.speedValue = settings.speedValue
-	state.killAuraRange = settings.killAuraRange
+	state.m1ClickDelay = settings.m1ClickDelay
 	speedBox.Text = tostring(state.speedValue)
-	killAuraBox.Text = tostring(state.killAuraRange)
+	m1DelayBox.Text = tostring(state.m1ClickDelay)
 	
 	local keyCode = Enum.KeyCode[settings.guiToggleKey]
 	if keyCode then
@@ -698,5 +564,5 @@ game:GetService("Players").LocalPlayer.OnTeleport:Connect(function()
 end)
 
 print("[FFRE GUI v2.0] Loaded successfully!")
-print("[FEATURES] Autofarm, God Mode, Speed, Infinite Jump, Kill Aura, Save/Load")
+print("[FEATURES] Autofarm, God Mode, Speed, Infinite Jump, M1 Macro, Save/Load")
 print("[OPTIMIZATIONS] Character Cache, Throttling, Object Pooling, Error Handling")
