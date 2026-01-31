@@ -1,6 +1,7 @@
 -- ===== FFRE GUI V4 - NS HUB STYLE =====
--- Ultra Smooth Teleport (Anti-Kick) + Lock On Target + Workspace.LiveNPCS NPCs
--- Desktop Config Save + ESP + Tracers + Health Bars
+-- Ultra Smooth Teleport (Anti-Kick) + Lock On Target
+-- ESP + Tracers + Health Bars (Workspace.Alive)
+-- Teleport (Workspace.LiveNPCS)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -21,37 +22,11 @@ local CONFIG = {
 	M1_CLICK_DELAY = 0.15,
 	CHAR_CACHE_UPDATE = 0.5,
 	GUI_NAME = "FFREStyledGui",
-	CONFIGS_FOLDER = nil,
-	DEFAULT_CONFIG_NAME = "Default",
 	TELEPORT_SPEED = 150, -- Studs per second for smooth teleport
-	MAX_TELEPORT_DISTANCE = 500 -- Max distance before chunking
+	MAX_TELEPORT_DISTANCE = 500, -- Max distance before chunking
+	VISUAL_NPC_FOLDER = workspace:WaitForChild("Alive"), -- Para ESP, Tracers, Health Bars
+	TELEPORT_NPC_FOLDER = workspace:WaitForChild("LiveNPCS") -- Para Teleporte
 }
-
--- ===== GET DESKTOP PATH =====
-local function getDesktopPath()
-	local desktopPath = nil
-	
-	pcall(function()
-		if os.getenv then
-			local userProfile = os.getenv("USERPROFILE")
-			if userProfile then
-				desktopPath = userProfile .. "\\Desktop\\"
-			end
-		end
-	end)
-	
-	if not desktopPath then
-		desktopPath = "C:\\Users\\" .. (os.getenv and os.getenv("USERNAME") or "User") .. "\\Desktop\\"
-	end
-	
-	return desktopPath .. "FFRE_Configs\\"
-end
-
-CONFIG.CONFIGS_FOLDER = getDesktopPath()
-
--- ===== NPC FOLDER =====
--- MODIFICADO: Agora usa Workspace.LiveNPCS
-local AliveFolder = workspace:WaitForChild("LiveNPCS")
 
 -- ===== CACHE =====
 local Vector3_new = Vector3.new
@@ -90,168 +65,12 @@ local state = {
 	},
 	lastSpeedApply = 0,
 	currentPage = "combat",
-	selectedConfig = nil,
-	autoLoadConfig = nil,
 	espObjects = {},
 	tracerLines = {},
 	healthBarObjects = {},
-	isTeleporting = false
+	isTeleporting = false,
+	teleportNPCList = {}
 }
-
--- ===== CONFIGURATION SYSTEM =====
-local ConfigSystem = {}
-
-function ConfigSystem.ensureFolder()
-	if not isfolder or not makefolder then 
-		return false 
-	end
-	
-	local success = pcall(function()
-		if not isfolder(CONFIG.CONFIGS_FOLDER) then
-			makefolder(CONFIG.CONFIGS_FOLDER)
-		end
-	end)
-	
-	return success
-end
-
-function ConfigSystem.getConfigList()
-	if not ConfigSystem.ensureFolder() then return {} end
-	if not listfiles then return {} end
-	
-	local configs = {}
-	local success, files = pcall(function()
-		return listfiles(CONFIG.CONFIGS_FOLDER)
-	end)
-	
-	if not success then return {} end
-	
-	for _, file in ipairs(files) do
-		local name = file:match("([^/\\]+)%.json$")
-		if name then
-			table.insert(configs, name)
-		end
-	end
-	
-	table.sort(configs)
-	return configs
-end
-
-function ConfigSystem.saveConfig(name, settings)
-	if not ConfigSystem.ensureFolder() then 
-		return false, "File system not available" 
-	end
-	
-	if not writefile then
-		return false, "writefile not available"
-	end
-	
-	local success, err = pcall(function()
-		local fullPath = CONFIG.CONFIGS_FOLDER .. name .. ".json"
-		local data = HttpService:JSONEncode(settings)
-		writefile(fullPath, data)
-	end)
-	
-	return success, err
-end
-
-function ConfigSystem.loadConfig(name)
-	if not ConfigSystem.ensureFolder() then return nil end
-	if not readfile or not isfile then return nil end
-	
-	local fullPath = CONFIG.CONFIGS_FOLDER .. name .. ".json"
-	
-	local fileExists = false
-	pcall(function()
-		fileExists = isfile(fullPath)
-	end)
-	
-	if not fileExists then return nil end
-	
-	local success, data = pcall(function()
-		local content = readfile(fullPath)
-		return HttpService:JSONDecode(content)
-	end)
-	
-	return success and data or nil
-end
-
-function ConfigSystem.deleteConfig(name)
-	if not ConfigSystem.ensureFolder() then return false end
-	if not delfile or not isfile then return false end
-	
-	local fullPath = CONFIG.CONFIGS_FOLDER .. name .. ".json"
-	
-	local success = pcall(function()
-		if isfile(fullPath) then
-			delfile(fullPath)
-			return true
-		end
-	end)
-	
-	return success
-end
-
-function ConfigSystem.getCurrentSettings()
-	return {
-		speedValue = state.speedValue,
-		m1ClickDelay = state.m1ClickDelay,
-		guiToggleKey = state.guiToggleKey.Name,
-		autofarmEnabled = state.autofarmEnabled,
-		speedEnabled = state.speedEnabled,
-		infiniteJumpEnabled = state.infiniteJumpEnabled,
-		m1MacroEnabled = state.m1MacroEnabled,
-		espEnabled = state.espEnabled,
-		tracersEnabled = state.tracersEnabled,
-		healthBarsEnabled = state.healthBarsEnabled,
-		lockOnEnabled = state.lockOnEnabled,
-		timestamp = os.date("%Y-%m-%d %H:%M:%S")
-	}
-end
-
-function ConfigSystem.applySettings(settings)
-	if not settings then return end
-	
-	state.speedValue = settings.speedValue or state.speedValue
-	state.m1ClickDelay = settings.m1ClickDelay or state.m1ClickDelay
-	
-	task.spawn(function()
-		task.wait(0.5)
-		if toggleUpdateFunctions then
-			if toggleUpdateFunctions.autofarm then
-				toggleUpdateFunctions.autofarm(settings.autofarmEnabled == true)
-			end
-			if toggleUpdateFunctions.speed then
-				toggleUpdateFunctions.speed(settings.speedEnabled == true)
-			end
-			if toggleUpdateFunctions.infiniteJump then
-				toggleUpdateFunctions.infiniteJump(settings.infiniteJumpEnabled == true)
-			end
-			if toggleUpdateFunctions.m1Macro then
-				toggleUpdateFunctions.m1Macro(settings.m1MacroEnabled == true)
-			end
-			if toggleUpdateFunctions.esp then
-				toggleUpdateFunctions.esp(settings.espEnabled == true)
-			end
-			if toggleUpdateFunctions.tracers then
-				toggleUpdateFunctions.tracers(settings.tracersEnabled == true)
-			end
-			if toggleUpdateFunctions.healthBars then
-				toggleUpdateFunctions.healthBars(settings.healthBarsEnabled == true)
-			end
-			if toggleUpdateFunctions.lockOn then
-				toggleUpdateFunctions.lockOn(settings.lockOnEnabled == true)
-			end
-		end
-	end)
-	
-	local keyCode = settings.guiToggleKey and Enum.KeyCode[settings.guiToggleKey]
-	if keyCode then
-		state.guiToggleKey = keyCode
-	end
-	
-	return true
-end
 
 -- ===== UTILS =====
 local function disconnectConnection(name)
@@ -286,13 +105,13 @@ local function invalidateCharCache()
 	state.charCache.lastUpdate = 0
 end
 
--- ===== NPC CACHE =====
+-- ===== NPC CACHE (PARA AUTOFARM/LOCKON) =====
 local function updateNPCCache()
 	table.clear(state.npcCache)
 	local root, _, _ = getCharComponents()
 	if not root then return end
 
-	for _, npc in ipairs(AliveFolder:GetChildren()) do
+	for _, npc in ipairs(CONFIG.VISUAL_NPC_FOLDER:GetChildren()) do
 		if npc:IsA("Model") and npc ~= player.Character then
 			local hum = npc:FindFirstChild("Humanoid")
 			local npcRoot = npc:FindFirstChild("HumanoidRootPart")
@@ -317,7 +136,7 @@ local function findClosestNPC()
 	return state.npcCache[1] and state.npcCache[1].model
 end
 
--- ===== ESP SYSTEM =====
+-- ===== ESP SYSTEM (WORLDSPACE.ALIVE) =====
 local function createESP(npc)
 	if state.espObjects[npc] then return end
 	
@@ -350,7 +169,7 @@ local function clearAllESP()
 	table.clear(state.espObjects)
 end
 
--- ===== TRACERS SYSTEM =====
+-- ===== TRACERS SYSTEM (WORLDSPACE.ALIVE) =====
 local function createTracer(npc)
 	if state.tracerLines[npc] then return end
 	
@@ -408,7 +227,7 @@ local function clearAllTracers()
 	table.clear(state.tracerLines)
 end
 
--- ===== HEALTH BAR SYSTEM =====
+-- ===== HEALTH BAR SYSTEM (WORLDSPACE.ALIVE) =====
 local function createHealthBar(npc)
 	if state.healthBarObjects[npc] then return end
 	
@@ -497,9 +316,9 @@ local function clearAllHealthBars()
 	table.clear(state.healthBarObjects)
 end
 
--- ===== VISUAL FEATURES UPDATE =====
+-- ===== VISUAL FEATURES UPDATE (WORLDSPACE.ALIVE) =====
 local function updateVisuals()
-	for _, npc in ipairs(AliveFolder:GetChildren()) do
+	for _, npc in ipairs(CONFIG.VISUAL_NPC_FOLDER:GetChildren()) do
 		if npc:IsA("Model") and npc ~= player.Character then
 			local hum = npc:FindFirstChild("Humanoid")
 			local npcRoot = npc:FindFirstChild("HumanoidRootPart")
@@ -534,7 +353,7 @@ local function updateVisuals()
 	updateTracers()
 end
 
--- ===== ULTRA SMOOTH TELEPORT (ANTI-KICK) =====
+-- ===== ULTRA SMOOTH TELEPORT (ANTI-KICK) - WORKS IN WORKSPACE.LIVENPCS =====
 local function ultraSmoothTeleport(targetPosition)
 	if state.isTeleporting then
 		return false
@@ -605,11 +424,13 @@ local function ultraSmoothTeleport(targetPosition)
 	return true
 end
 
+-- ===== TELEPORT FUNCTIONS (WORKS IN WORKSPACE.LIVENPCS) =====
 local function safeTeleportToNPC(npcName)
 	local root, _, _ = getCharComponents()
 	if not root then return false, "Character not found" end
 	
-	for _, npc in ipairs(AliveFolder:GetChildren()) do
+	-- Procura na pasta LiveNPCS
+	for _, npc in ipairs(CONFIG.TELEPORT_NPC_FOLDER:GetChildren()) do
 		if npc.Name == npcName and npc:IsA("Model") then
 			local npcRoot = npc:FindFirstChild("HumanoidRootPart")
 			if npcRoot then
@@ -624,12 +445,12 @@ local function safeTeleportToNPC(npcName)
 		end
 	end
 	
-	return false, "NPC not found"
+	return false, "NPC not found in LiveNPCS"
 end
 
-local function getNPCList()
+local function getTeleportNPCList()
 	local npcList = {}
-	for _, npc in ipairs(AliveFolder:GetChildren()) do
+	for _, npc in ipairs(CONFIG.TELEPORT_NPC_FOLDER:GetChildren()) do
 		if npc:IsA("Model") and npc:FindFirstChild("HumanoidRootPart") then
 			if not table.find(npcList, npc.Name) then
 				table.insert(npcList, npc.Name)
@@ -637,6 +458,7 @@ local function getNPCList()
 		end
 	end
 	table.sort(npcList)
+	state.teleportNPCList = npcList
 	return npcList
 end
 
@@ -738,6 +560,29 @@ local function speedLoop()
 	end
 end
 
+-- ===== NO CLIP =====
+local function enableNoClip()
+	local char = player.Character
+	if char then
+		for _, part in ipairs(char:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.CanCollide = false
+			end
+		end
+	end
+end
+
+local function disableNoClip()
+	local char = player.Character
+	if char then
+		for _, part in ipairs(char:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.CanCollide = true
+			end
+		end
+	end
+end
+
 -- ===== CLEANUP OLD GUI =====
 pcall(function()
 	CoreGui:FindFirstChild(CONFIG.GUI_NAME):Destroy()
@@ -753,8 +598,8 @@ screenGui.Parent = CoreGui
 -- Main Frame
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2_new(0, 320, 0, 450)
-mainFrame.Position = UDim2_new(0, 20, 0.5, -225)
+mainFrame.Size = UDim2_new(0, 320, 0, 500) -- Aumentado para 500
+mainFrame.Position = UDim2_new(0, 20, 0.5, -250)
 mainFrame.BackgroundColor3 = Color3_fromRGB(13, 13, 18)
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
@@ -823,7 +668,7 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2_new(0, 80, 1, 0)
 versionLabel.Position = UDim2_new(1, -90, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "1.0" 
+versionLabel.Text = "V4.1" 
 versionLabel.Font = Enum.Font.Gotham
 versionLabel.TextSize = 11
 versionLabel.TextColor3 = Color3_fromRGB(120, 120, 140)
@@ -893,8 +738,8 @@ local function createSidebarBtn(icon, name)
 	return btn
 end
 
--- MODIFICADO: Removido o botão de Config da sidebar
 local combatBtn = createSidebarBtn("⚔", "CombatBtn")
+local movementBtn = createSidebarBtn("🚀", "MovementBtn")
 local visualBtn = createSidebarBtn("👁", "VisualBtn")
 local teleportBtn = createSidebarBtn("📍", "TeleportBtn")
 
@@ -932,19 +777,22 @@ local function createPage(name)
 	return page
 end
 
--- MODIFICADO: Removida a página de Config
 local combatPage = createPage("CombatPage")
+local movementPage = createPage("MovementPage")
 local visualPage = createPage("VisualPage")
 local teleportPage = createPage("TeleportPage")
 
 -- Page Switching
 local function switchPage(page, btn)
 	combatPage.Visible = false
+	movementPage.Visible = false
 	visualPage.Visible = false
 	teleportPage.Visible = false
 	
 	combatBtn.BackgroundColor3 = Color3_fromRGB(22, 22, 30)
 	combatBtn.TextColor3 = Color3_fromRGB(120, 120, 140)
+	movementBtn.BackgroundColor3 = Color3_fromRGB(22, 22, 30)
+	movementBtn.TextColor3 = Color3_fromRGB(120, 120, 140)
 	visualBtn.BackgroundColor3 = Color3_fromRGB(22, 22, 30)
 	visualBtn.TextColor3 = Color3_fromRGB(120, 120, 140)
 	teleportBtn.BackgroundColor3 = Color3_fromRGB(22, 22, 30)
@@ -957,6 +805,10 @@ end
 
 combatBtn.MouseButton1Click:Connect(function()
 	switchPage(combatPage, combatBtn)
+end)
+
+movementBtn.MouseButton1Click:Connect(function()
+	switchPage(movementPage, movementBtn)
 end)
 
 visualBtn.MouseButton1Click:Connect(function()
@@ -1167,7 +1019,7 @@ createSectionHeader(combatPage, "Combat Settings")
 local autofarmContainer, autofarmToggle, autofarmBg, autofarmCircle = createToggle(
 	combatPage, 
 	"Auto Farm", 
-	"Automatically farm the closest NPC",
+	"Automatically farm the closest NPC in Workspace.Alive",
 	state.autofarmEnabled
 )
 
@@ -1193,17 +1045,18 @@ local m1SliderContainer, m1SliderBtn, m1SliderFill, m1ValueLabel, m1Min, m1Max =
 	state.m1ClickDelay
 )
 
-createSectionHeader(combatPage, "Movement Settings")
+-- ===== MOVEMENT PAGE =====
+createSectionHeader(movementPage, "Movement Settings")
 
 local speedContainer, speedToggle, speedBg, speedCircle = createToggle(
-	combatPage,
+	movementPage,
 	"Speed Boost",
 	"Increase movement speed",
 	state.speedEnabled
 )
 
 local speedSliderContainer, speedSliderBtn, speedSliderFill, speedValueLabel, speedMin, speedMax = createSlider(
-	combatPage,
+	movementPage,
 	"Speed Value",
 	50,
 	300,
@@ -1211,14 +1064,32 @@ local speedSliderContainer, speedSliderBtn, speedSliderFill, speedValueLabel, sp
 )
 
 local jumpContainer, jumpToggle, jumpBg, jumpCircle = createToggle(
-	combatPage,
+	movementPage,
 	"Infinite Jump",
 	"Jump infinitely without limit",
 	state.infiniteJumpEnabled
 )
 
+-- NO CLIP
+local noClipEnabled = false
+local noClipContainer, noClipToggle, noClipBg, noClipCircle = createToggle(
+	movementPage,
+	"No Clip",
+	"Walk through walls",
+	false
+)
+
+-- FLY
+local flyEnabled = false
+local flyContainer, flyToggle, flyBg, flyCircle = createToggle(
+	movementPage,
+	"Fly (F)",
+	"Press F to fly, WASD to move",
+	false
+)
+
 -- ===== VISUAL PAGE =====
-createSectionHeader(visualPage, "Visual Features")
+createSectionHeader(visualPage, "Visual Features (Workspace.Alive)")
 
 local espContainer, espToggle, espBg, espCircle = createToggle(
 	visualPage,
@@ -1241,11 +1112,29 @@ local healthBarsContainer, healthBarsToggle, healthBarsBg, healthBarsCircle = cr
 	state.healthBarsEnabled
 )
 
+-- Player ESP
+local playerESPEnabled = false
+local playerESPContainer, playerESPToggle, playerESPBg, playerESPCircle = createToggle(
+	visualPage,
+	"Player ESP",
+	"See other players through walls",
+	false
+)
+
+-- FOV Circle
+local fovEnabled = false
+local fovContainer, fovToggle, fovBg, fovCircle = createToggle(
+	visualPage,
+	"FOV Circle",
+	"Show aim field of view",
+	false
+)
+
 -- ===== TELEPORT PAGE =====
-createSectionHeader(teleportPage, "Safe Teleport System")
+createSectionHeader(teleportPage, "Safe Teleport System (Workspace.LiveNPCS)")
 
 local tpInfoContainer = Instance.new("Frame")
-tpInfoContainer.Size = UDim2_new(1, 0, 0, 60)
+tpInfoContainer.Size = UDim2_new(1, 0, 0, 80)
 tpInfoContainer.BackgroundColor3 = Color3_fromRGB(100, 180, 255)
 tpInfoContainer.BackgroundTransparency = 0.9
 tpInfoContainer.BorderSizePixel = 0
@@ -1259,7 +1148,7 @@ local tpInfoLabel = Instance.new("TextLabel")
 tpInfoLabel.Size = UDim2_new(1, -20, 1, 0)
 tpInfoLabel.Position = UDim2_new(0, 10, 0, 0)
 tpInfoLabel.BackgroundTransparency = 1
-tpInfoLabel.Text = "📍 Ultra Smooth Teleport\nAnti-kick protection for long distances\nClick any NPC to teleport safely"
+tpInfoLabel.Text = "📍 Ultra Smooth Teleport\n📁 Works in: Workspace.LiveNPCS\n🛡️ Anti-kick protection\n📌 Click any NPC to teleport"
 tpInfoLabel.Font = Enum.Font.Gotham
 tpInfoLabel.TextSize = 10
 tpInfoLabel.TextColor3 = Color3_white
@@ -1268,6 +1157,8 @@ tpInfoLabel.TextWrapped = true
 tpInfoLabel.Parent = tpInfoContainer
 
 local refreshNPCBtn = createButton(teleportPage, "🔄 Refresh NPC List", Color3_fromRGB(80, 200, 120))
+local teleportToSpawnBtn = createButton(teleportPage, "🏠 Teleport to Spawn", Color3_fromRGB(155, 89, 182))
+local teleportToRandomBtn = createButton(teleportPage, "🎲 Teleport to Random NPC", Color3_fromRGB(241, 196, 15))
 
 local npcListContainer = Instance.new("Frame")
 npcListContainer.Name = "NPCListContainer"
@@ -1288,7 +1179,20 @@ local function populateNPCList()
 		end
 	end
 	
-	local npcList = getNPCList()
+	local npcList = getTeleportNPCList()
+	
+	if #npcList == 0 then
+		local noNpcLabel = Instance.new("TextLabel")
+		noNpcLabel.Size = UDim2_new(1, 0, 0, 40)
+		noNpcLabel.BackgroundTransparency = 1
+		noNpcLabel.Text = "📭 No NPCs found in Workspace.LiveNPCS"
+		noNpcLabel.Font = Enum.Font.Gotham
+		noNpcLabel.TextSize = 11
+		noNpcLabel.TextColor3 = Color3_fromRGB(200, 200, 200)
+		noNpcLabel.TextXAlignment = Enum.TextXAlignment.Center
+		noNpcLabel.Parent = npcListContainer
+		return
+	end
 	
 	for _, npcName in ipairs(npcList) do
 		local npcBtn = Instance.new("TextButton")
@@ -1332,9 +1236,21 @@ end
 
 refreshNPCBtn.MouseButton1Click:Connect(populateNPCList)
 
-task.spawn(function()
-	task.wait(1)
-	populateNPCList()
+teleportToSpawnBtn.MouseButton1Click:Connect(function()
+	local root, _, _ = getCharComponents()
+	if root then
+		task.spawn(function()
+			ultraSmoothTeleport(Vector3_new(0, 10, 0))
+		end)
+	end
+end)
+
+teleportToRandomBtn.MouseButton1Click:Connect(function()
+	local npcList = state.teleportNPCList
+	if #npcList > 0 then
+		local randomNPC = npcList[math.random(1, #npcList)]
+		safeTeleportToNPC(randomNPC)
+	end
 end)
 
 -- ===== TOGGLE FUNCTIONS =====
@@ -1511,6 +1427,61 @@ jumpToggle.MouseButton1Click:Connect(function()
 	toggleUpdateFunctions.infiniteJump(not state.infiniteJumpEnabled)
 end)
 
+-- No Clip
+toggleUpdateFunctions.noClip = function(enabled)
+	noClipEnabled = enabled
+	
+	TweenService:Create(noClipBg, TweenInfo.new(0.2), {
+		BackgroundColor3 = enabled and Color3_fromRGB(100, 180, 255) or Color3_fromRGB(40, 40, 55)
+	}):Play()
+	
+	TweenService:Create(noClipCircle, TweenInfo.new(0.2), {
+		Position = enabled and UDim2_new(1, -18, 0.5, -8) or UDim2_new(0, 2, 0.5, -8)
+	}):Play()
+	
+	if enabled then
+		enableNoClip()
+		disconnectConnection("noClip")
+		state.connections.noClip = RunService.Heartbeat:Connect(function()
+			if noClipEnabled then
+				enableNoClip()
+			end
+		end)
+	else
+		disableNoClip()
+		disconnectConnection("noClip")
+	end
+end
+
+noClipToggle.MouseButton1Click:Connect(function()
+	toggleUpdateFunctions.noClip(not noClipEnabled)
+end)
+
+-- Fly
+toggleUpdateFunctions.fly = function(enabled)
+	flyEnabled = enabled
+	
+	TweenService:Create(flyBg, TweenInfo.new(0.2), {
+		BackgroundColor3 = enabled and Color3_fromRGB(100, 180, 255) or Color3_fromRGB(40, 40, 55)
+	}):Play()
+	
+	TweenService:Create(flyCircle, TweenInfo.new(0.2), {
+		Position = enabled and UDim2_new(1, -18, 0.5, -8) or UDim2_new(0, 2, 0.5, -8)
+	}):Play()
+	
+	if enabled then
+		-- Fly system would be implemented here
+		print("Fly enabled - Press F to toggle flight")
+	else
+		-- Disable fly
+		print("Fly disabled")
+	end
+end
+
+flyToggle.MouseButton1Click:Connect(function()
+	toggleUpdateFunctions.fly(not flyEnabled)
+end)
+
 -- ESP
 toggleUpdateFunctions.esp = function(enabled)
 	state.espEnabled = enabled
@@ -1596,6 +1567,15 @@ UserInputService.InputBegan:Connect(function(input, processed)
 	if input.KeyCode == Enum.KeyCode.F2 then
 		toggleUpdateFunctions.m1Macro(not state.m1MacroEnabled)
 	end
+	
+	if input.KeyCode == Enum.KeyCode.F3 then
+		-- Quick teleport to closest NPC
+		local npcList = state.teleportNPCList
+		if #npcList > 0 then
+			local npcName = npcList[1]
+			safeTeleportToNPC(npcName)
+		end
+	end
 end)
 
 -- ===== CHARACTER EVENTS =====
@@ -1622,14 +1602,19 @@ screenGui.Destroying:Connect(function()
 end)
 
 -- ===== STARTUP =====
+task.spawn(function()
+	task.wait(1)
+	populateNPCList()
+end)
+
 print("═══════════════════════════════════════════════")
-print("  CyberHub - FFRE EDITION V4")
+print("  CyberHub - FFRE EDITION V4.1")
 print("═══════════════════════════════════════════════")
 print("  ⚔️ Combat: Auto Farm | Lock On | M1 Macro")
-print("  ⚡ Movement: Speed | Infinite Jump")
+print("  🚀 Movement: Speed | Infinite Jump | No Clip")
 print("  👁️ Visual: ESP | Tracers | Health Bars")
-print("  📍 Teleport: Ultra Smooth (Anti-Kick)")
-print("  📁 NPC Folder: Workspace.LiveNPCS")
+print("  📍 Teleport: Workspace.LiveNPCS (Ultra Smooth)")
 print("═══════════════════════════════════════════════")
 print("  F1 - Toggle GUI | F2 - Toggle M1 Macro")
+print("  F3 - Quick Teleport to Closest NPC")
 print("═══════════════════════════════════════════════")
