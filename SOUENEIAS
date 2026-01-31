@@ -1,5 +1,5 @@
 -- ===== FFRE GUI V4 - NS HUB STYLE =====
--- Ultra Smooth Teleport (Anti-Kick) + Lock On Target + Workspace.Alive NPCs
+-- Ultra Smooth Teleport (Anti-Kick) + Lock On Target + Workspace.LiveNPCS NPCs
 -- Desktop Config Save + ESP + Tracers + Health Bars
 
 local Players = game:GetService("Players")
@@ -50,7 +50,8 @@ end
 CONFIG.CONFIGS_FOLDER = getDesktopPath()
 
 -- ===== NPC FOLDER =====
-local AliveFolder = workspace:WaitForChild("Alive")
+-- MODIFICADO: Agora usa Workspace.LiveNPCS
+local AliveFolder = workspace:WaitForChild("LiveNPCS")
 
 -- ===== CACHE =====
 local Vector3_new = Vector3.new
@@ -892,10 +893,10 @@ local function createSidebarBtn(icon, name)
 	return btn
 end
 
+-- MODIFICADO: Removido o botão de Config da sidebar
 local combatBtn = createSidebarBtn("⚔", "CombatBtn")
 local visualBtn = createSidebarBtn("👁", "VisualBtn")
 local teleportBtn = createSidebarBtn("📍", "TeleportBtn")
-local configBtn = createSidebarBtn("⚙", "ConfigBtn")
 
 -- Content Area
 local contentArea = Instance.new("Frame")
@@ -931,17 +932,16 @@ local function createPage(name)
 	return page
 end
 
+-- MODIFICADO: Removida a página de Config
 local combatPage = createPage("CombatPage")
 local visualPage = createPage("VisualPage")
 local teleportPage = createPage("TeleportPage")
-local configPage = createPage("ConfigPage")
 
 -- Page Switching
 local function switchPage(page, btn)
 	combatPage.Visible = false
 	visualPage.Visible = false
 	teleportPage.Visible = false
-	configPage.Visible = false
 	
 	combatBtn.BackgroundColor3 = Color3_fromRGB(22, 22, 30)
 	combatBtn.TextColor3 = Color3_fromRGB(120, 120, 140)
@@ -949,8 +949,6 @@ local function switchPage(page, btn)
 	visualBtn.TextColor3 = Color3_fromRGB(120, 120, 140)
 	teleportBtn.BackgroundColor3 = Color3_fromRGB(22, 22, 30)
 	teleportBtn.TextColor3 = Color3_fromRGB(120, 120, 140)
-	configBtn.BackgroundColor3 = Color3_fromRGB(22, 22, 30)
-	configBtn.TextColor3 = Color3_fromRGB(120, 120, 140)
 	
 	page.Visible = true
 	btn.BackgroundColor3 = Color3_fromRGB(100, 180, 255)
@@ -967,10 +965,6 @@ end)
 
 teleportBtn.MouseButton1Click:Connect(function()
 	switchPage(teleportPage, teleportBtn)
-end)
-
-configBtn.MouseButton1Click:Connect(function()
-	switchPage(configPage, configBtn)
 end)
 
 -- Initialize
@@ -1167,53 +1161,6 @@ local function createButton(parent, text, color)
 	return btn
 end
 
--- Helper: Create Input
-local function createInput(parent, labelText, placeholder)
-	local container = Instance.new("Frame")
-	container.Size = UDim2_new(1, 0, 0, 60)
-	container.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
-	container.BorderSizePixel = 0
-	container.Parent = parent
-	
-	local containerCorner = Instance.new("UICorner")
-	containerCorner.CornerRadius = UDim.new(0, 6)
-	containerCorner.Parent = container
-	
-	local label = Instance.new("TextLabel")
-	label.Size = UDim2_new(1, -20, 0, 18)
-	label.Position = UDim2_new(0, 10, 0, 8)
-	label.BackgroundTransparency = 1
-	label.Text = labelText
-	label.Font = Enum.Font.GothamBold
-	label.TextSize = 11
-	label.TextColor3 = Color3_fromRGB(180, 180, 200)
-	label.TextXAlignment = Enum.TextXAlignment.Left
-	label.Parent = container
-	
-	local input = Instance.new("TextBox")
-	input.Size = UDim2_new(1, -20, 0, 28)
-	input.Position = UDim2_new(0, 10, 0, 28)
-	input.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
-	input.PlaceholderText = placeholder
-	input.Text = ""
-	input.Font = Enum.Font.Gotham
-	input.TextSize = 11
-	input.TextColor3 = Color3_white
-	input.BorderSizePixel = 0
-	input.ClearTextOnFocus = false
-	input.Parent = container
-	
-	local inputCorner = Instance.new("UICorner")
-	inputCorner.CornerRadius = UDim.new(0, 4)
-	inputCorner.Parent = input
-	
-	local inputPadding = Instance.new("UIPadding")
-	inputPadding.PaddingLeft = UDim.new(0, 8)
-	inputPadding.Parent = input
-	
-	return container, input
-end
-
 -- ===== COMBAT PAGE =====
 createSectionHeader(combatPage, "Combat Settings")
 
@@ -1388,217 +1335,6 @@ refreshNPCBtn.MouseButton1Click:Connect(populateNPCList)
 task.spawn(function()
 	task.wait(1)
 	populateNPCList()
-end)
-
--- ===== CONFIG PAGE =====
-createSectionHeader(configPage, "Configuration Manager")
-
-local configPathInfo = Instance.new("Frame")
-configPathInfo.Size = UDim2_new(1, 0, 0, 60)
-configPathInfo.BackgroundColor3 = Color3_fromRGB(100, 180, 255)
-configPathInfo.BackgroundTransparency = 0.9
-configPathInfo.BorderSizePixel = 0
-configPathInfo.Parent = configPage
-
-local configPathCorner = Instance.new("UICorner")
-configPathCorner.CornerRadius = UDim.new(0, 6)
-configPathCorner.Parent = configPathInfo
-
-local configPathLabel = Instance.new("TextLabel")
-configPathLabel.Size = UDim2_new(1, -20, 1, 0)
-configPathLabel.Position = UDim2_new(0, 10, 0, 0)
-configPathLabel.BackgroundTransparency = 1
-configPathLabel.Text = "💾 Save Location:\n" .. CONFIG.CONFIGS_FOLDER
-configPathLabel.Font = Enum.Font.Gotham
-configPathLabel.TextSize = 9
-configPathLabel.TextColor3 = Color3_white
-configPathLabel.TextXAlignment = Enum.TextXAlignment.Left
-configPathLabel.TextWrapped = true
-configPathLabel.Parent = configPathInfo
-
-local configNameContainer, configNameInput = createInput(configPage, "Config Name", "Enter name...")
-
-local createConfigBtn = createButton(configPage, "➕ Create Config", Color3_fromRGB(80, 200, 120))
-local loadConfigBtn = createButton(configPage, "📂 Load Selected", Color3_fromRGB(100, 180, 255))
-local overwriteConfigBtn = createButton(configPage, "✏️ Overwrite Selected", Color3_fromRGB(230, 126, 34))
-local refreshConfigBtn = createButton(configPage, "🔄 Refresh List", Color3_fromRGB(149, 165, 166))
-
-createSectionHeader(configPage, "Saved Configurations")
-
-local configListContainer = Instance.new("Frame")
-configListContainer.Name = "ConfigListContainer"
-configListContainer.Size = UDim2_new(1, 0, 0, 0)
-configListContainer.AutomaticSize = Enum.AutomaticSize.Y
-configListContainer.BackgroundTransparency = 1
-configListContainer.Parent = configPage
-
-local configListLayout = Instance.new("UIListLayout")
-configListLayout.Padding = UDim.new(0, 5)
-configListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-configListLayout.Parent = configListContainer
-
-local messageLabel = Instance.new("TextLabel")
-messageLabel.Size = UDim2_new(1, 0, 0, 0)
-messageLabel.BackgroundTransparency = 1
-messageLabel.Text = ""
-messageLabel.Font = Enum.Font.GothamBold
-messageLabel.TextSize = 10
-messageLabel.TextColor3 = Color3_fromRGB(100, 255, 100)
-messageLabel.TextXAlignment = Enum.TextXAlignment.Center
-messageLabel.TextWrapped = true
-messageLabel.Visible = false
-messageLabel.Parent = configPage
-
-local function showMessage(text, color)
-	messageLabel.Text = text
-	messageLabel.TextColor3 = color
-	messageLabel.Visible = true
-	messageLabel.Size = UDim2_new(1, 0, 0, 30)
-	task.wait(3)
-	messageLabel.Visible = false
-	messageLabel.Size = UDim2_new(1, 0, 0, 0)
-end
-
-local function updateConfigList()
-	for _, child in ipairs(configListContainer:GetChildren()) do
-		if child:IsA("Frame") and child.Name ~= "UIListLayout" then
-			child:Destroy()
-		end
-	end
-	
-	local configs = ConfigSystem.getConfigList()
-	
-	for _, configName in ipairs(configs) do
-		local configItem = Instance.new("Frame")
-		configItem.Size = UDim2_new(1, 0, 0, 32)
-		configItem.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
-		configItem.BorderSizePixel = 0
-		configItem.Parent = configListContainer
-		
-		local configItemCorner = Instance.new("UICorner")
-		configItemCorner.CornerRadius = UDim.new(0, 6)
-		configItemCorner.Parent = configItem
-		
-		local configItemBtn = Instance.new("TextButton")
-		configItemBtn.Size = UDim2_new(0.75, 0, 1, 0)
-		configItemBtn.Position = UDim2_new(0, 8, 0, 0)
-		configItemBtn.BackgroundTransparency = 1
-		configItemBtn.Text = "📄 " .. configName
-		configItemBtn.Font = Enum.Font.Gotham
-		configItemBtn.TextSize = 10
-		configItemBtn.TextColor3 = Color3_white
-		configItemBtn.TextXAlignment = Enum.TextXAlignment.Left
-		configItemBtn.AutoButtonColor = false
-		configItemBtn.Parent = configItem
-		
-		local deleteBtn = Instance.new("TextButton")
-		deleteBtn.Size = UDim2_new(0, 50, 0, 24)
-		deleteBtn.Position = UDim2_new(1, -54, 0.5, -12)
-		deleteBtn.BackgroundColor3 = Color3_fromRGB(200, 50, 50)
-		deleteBtn.Text = "🗑"
-		deleteBtn.Font = Enum.Font.GothamBold
-		deleteBtn.TextSize = 14
-		deleteBtn.TextColor3 = Color3_white
-		deleteBtn.BorderSizePixel = 0
-		deleteBtn.AutoButtonColor = false
-		deleteBtn.Parent = configItem
-		
-		local deleteBtnCorner = Instance.new("UICorner")
-		deleteBtnCorner.CornerRadius = UDim.new(0, 4)
-		deleteBtnCorner.Parent = deleteBtn
-		
-		configItemBtn.MouseButton1Click:Connect(function()
-			state.selectedConfig = configName
-			configNameInput.Text = configName
-			
-			for _, item in ipairs(configListContainer:GetChildren()) do
-				if item:IsA("Frame") then
-					item.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
-				end
-			end
-			configItem.BackgroundColor3 = Color3_fromRGB(100, 180, 255)
-			configItem.BackgroundTransparency = 0.8
-		end)
-		
-		deleteBtn.MouseButton1Click:Connect(function()
-			if ConfigSystem.deleteConfig(configName) then
-				showMessage("✅ Deleted: " .. configName, Color3_fromRGB(100, 255, 100))
-				updateConfigList()
-				if state.selectedConfig == configName then
-					state.selectedConfig = nil
-					configNameInput.Text = ""
-				end
-			else
-				showMessage("❌ Failed to delete", Color3_fromRGB(255, 100, 100))
-			end
-		end)
-	end
-end
-
-createConfigBtn.MouseButton1Click:Connect(function()
-	local configName = configNameInput.Text:gsub("%s+", " "):gsub("^%s*(.-)%s*$", "%1")
-	
-	if configName == "" then
-		showMessage("⚠️ Enter a name!", Color3_fromRGB(255, 200, 100))
-		return
-	end
-	
-	if configName:match("[^%w%s%-_]") then
-		showMessage("⚠️ Invalid characters!", Color3_fromRGB(255, 200, 100))
-		return
-	end
-	
-	local success, err = ConfigSystem.saveConfig(configName, ConfigSystem.getCurrentSettings())
-	
-	if success then
-		showMessage("✅ Saved: " .. configName, Color3_fromRGB(100, 255, 100))
-		state.selectedConfig = configName
-		updateConfigList()
-		configNameInput.Text = ""
-	else
-		showMessage("❌ Failed", Color3_fromRGB(255, 100, 100))
-	end
-end)
-
-loadConfigBtn.MouseButton1Click:Connect(function()
-	if not state.selectedConfig then
-		showMessage("⚠️ Select a config!", Color3_fromRGB(255, 200, 100))
-		return
-	end
-	
-	local settings = ConfigSystem.loadConfig(state.selectedConfig)
-	
-	if settings then
-		ConfigSystem.applySettings(settings)
-		showMessage("✅ Loaded: " .. state.selectedConfig, Color3_fromRGB(100, 255, 100))
-	else
-		showMessage("❌ Failed to load", Color3_fromRGB(255, 100, 100))
-	end
-end)
-
-overwriteConfigBtn.MouseButton1Click:Connect(function()
-	if not state.selectedConfig then
-		showMessage("⚠️ Select a config!", Color3_fromRGB(255, 200, 100))
-		return
-	end
-	
-	local success, err = ConfigSystem.saveConfig(state.selectedConfig, ConfigSystem.getCurrentSettings())
-	
-	if success then
-		showMessage("✅ Overwritten: " .. state.selectedConfig, Color3_fromRGB(100, 255, 100))
-	else
-		showMessage("❌ Failed", Color3_fromRGB(255, 100, 100))
-	end
-end)
-
-refreshConfigBtn.MouseButton1Click:Connect(function()
-	updateConfigList()
-	showMessage("✅ Refreshed", Color3_fromRGB(100, 255, 100))
-end)
-
-task.spawn(function()
-	task.wait(1)
-	updateConfigList()
 end)
 
 -- ===== TOGGLE FUNCTIONS =====
@@ -1887,13 +1623,13 @@ end)
 
 -- ===== STARTUP =====
 print("═══════════════════════════════════════════════")
-print("  NS HUB - FFRE EDITION V4")
+print("  CyberHub - FFRE EDITION V4")
 print("═══════════════════════════════════════════════")
 print("  ⚔️ Combat: Auto Farm | Lock On | M1 Macro")
 print("  ⚡ Movement: Speed | Infinite Jump")
 print("  👁️ Visual: ESP | Tracers | Health Bars")
 print("  📍 Teleport: Ultra Smooth (Anti-Kick)")
-print("  💾 Configs: " .. CONFIG.CONFIGS_FOLDER)
+print("  📁 NPC Folder: Workspace.LiveNPCS")
 print("═══════════════════════════════════════════════")
 print("  F1 - Toggle GUI | F2 - Toggle M1 Macro")
 print("═══════════════════════════════════════════════")
