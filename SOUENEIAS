@@ -1,5 +1,5 @@
--- ===== FFRE GUI V3 - ULTIMATE EDITION =====
--- Design NS HUB Style + Visual Features + Safe Teleport
+-- ===== FFRE GUI V4 - NS HUB STYLE =====
+-- Ultra Smooth Teleport (Anti-Kick) + Lock On Target + Workspace.Alive NPCs
 -- Desktop Config Save + ESP + Tracers + Health Bars
 
 local Players = game:GetService("Players")
@@ -21,9 +21,10 @@ local CONFIG = {
 	M1_CLICK_DELAY = 0.15,
 	CHAR_CACHE_UPDATE = 0.5,
 	GUI_NAME = "FFREStyledGui",
-	CONFIGS_FOLDER = nil, -- Will be set to desktop
+	CONFIGS_FOLDER = nil,
 	DEFAULT_CONFIG_NAME = "Default",
-	TELEPORT_TWEEN_TIME = 0.5 -- Smooth teleport to avoid kick
+	TELEPORT_SPEED = 150, -- Studs per second for smooth teleport
+	MAX_TELEPORT_DISTANCE = 500 -- Max distance before chunking
 }
 
 -- ===== GET DESKTOP PATH =====
@@ -49,7 +50,7 @@ end
 CONFIG.CONFIGS_FOLDER = getDesktopPath()
 
 -- ===== NPC FOLDER =====
-local LiveNPCs = workspace:WaitForChild("LiveNPCS")
+local AliveFolder = workspace:WaitForChild("Alive")
 
 -- ===== CACHE =====
 local Vector3_new = Vector3.new
@@ -58,6 +59,7 @@ local CFrame_new = CFrame.new
 local UDim2_new = UDim2.new
 local Color3_fromRGB = Color3.fromRGB
 local Color3_white = Color3.new(1,1,1)
+local Color3_black = Color3.new(0,0,0)
 
 -- ===== STATE =====
 local state = {
@@ -68,9 +70,11 @@ local state = {
 	espEnabled = false,
 	tracersEnabled = false,
 	healthBarsEnabled = false,
+	lockOnEnabled = false,
 	speedValue = 160,
 	m1ClickDelay = CONFIG.M1_CLICK_DELAY,
 	lockedNPC = nil,
+	lockedTarget = nil,
 	lastNPCScan = 0,
 	npcCache = {},
 	lastM1Click = 0,
@@ -98,14 +102,12 @@ local ConfigSystem = {}
 
 function ConfigSystem.ensureFolder()
 	if not isfolder or not makefolder then 
-		warn("[CONFIG] File system not available")
 		return false 
 	end
 	
 	local success = pcall(function()
 		if not isfolder(CONFIG.CONFIGS_FOLDER) then
 			makefolder(CONFIG.CONFIGS_FOLDER)
-			print("[CONFIG] Created folder: " .. CONFIG.CONFIGS_FOLDER)
 		end
 	end)
 	
@@ -147,7 +149,6 @@ function ConfigSystem.saveConfig(name, settings)
 		local fullPath = CONFIG.CONFIGS_FOLDER .. name .. ".json"
 		local data = HttpService:JSONEncode(settings)
 		writefile(fullPath, data)
-		print("[CONFIG] Saved: " .. fullPath)
 	end)
 	
 	return success, err
@@ -171,10 +172,6 @@ function ConfigSystem.loadConfig(name)
 		return HttpService:JSONDecode(content)
 	end)
 	
-	if success then
-		print("[CONFIG] Loaded: " .. fullPath)
-	end
-	
 	return success and data or nil
 end
 
@@ -187,7 +184,6 @@ function ConfigSystem.deleteConfig(name)
 	local success = pcall(function()
 		if isfile(fullPath) then
 			delfile(fullPath)
-			print("[CONFIG] Deleted: " .. fullPath)
 			return true
 		end
 	end)
@@ -207,6 +203,7 @@ function ConfigSystem.getCurrentSettings()
 		espEnabled = state.espEnabled,
 		tracersEnabled = state.tracersEnabled,
 		healthBarsEnabled = state.healthBarsEnabled,
+		lockOnEnabled = state.lockOnEnabled,
 		timestamp = os.date("%Y-%m-%d %H:%M:%S")
 	}
 end
@@ -240,6 +237,9 @@ function ConfigSystem.applySettings(settings)
 			end
 			if toggleUpdateFunctions.healthBars then
 				toggleUpdateFunctions.healthBars(settings.healthBarsEnabled == true)
+			end
+			if toggleUpdateFunctions.lockOn then
+				toggleUpdateFunctions.lockOn(settings.lockOnEnabled == true)
 			end
 		end
 	end)
@@ -291,7 +291,7 @@ local function updateNPCCache()
 	local root, _, _ = getCharComponents()
 	if not root then return end
 
-	for _, npc in ipairs(LiveNPCs:GetChildren()) do
+	for _, npc in ipairs(AliveFolder:GetChildren()) do
 		if npc:IsA("Model") and npc ~= player.Character then
 			local hum = npc:FindFirstChild("Humanoid")
 			local npcRoot = npc:FindFirstChild("HumanoidRootPart")
@@ -349,17 +349,16 @@ local function clearAllESP()
 	table.clear(state.espObjects)
 end
 
--- ===== TRACERS SYSTEM (FIXED) =====
+-- ===== TRACERS SYSTEM =====
 local function createTracer(npc)
 	if state.tracerLines[npc] then return end
 	
 	local npcRoot = npc:FindFirstChild("HumanoidRootPart")
 	if not npcRoot then return end
 	
-	-- Create line using Drawing API (works better than Beams)
 	local line = Drawing.new("Line")
 	line.Visible = true
-	line.Color = Color3.new(0, 1, 0) -- Green
+	line.Color = Color3.new(0, 1, 0)
 	line.Thickness = 2
 	line.Transparency = 0.7
 	
@@ -370,7 +369,6 @@ local function updateTracers()
 	if not state.tracersEnabled then return end
 	
 	local camera = workspace.CurrentCamera
-	local root = getCharComponents()
 	
 	for npc, line in pairs(state.tracerLines) do
 		if npc and npc.Parent then
@@ -500,7 +498,7 @@ end
 
 -- ===== VISUAL FEATURES UPDATE =====
 local function updateVisuals()
-	for _, npc in ipairs(LiveNPCs:GetChildren()) do
+	for _, npc in ipairs(AliveFolder:GetChildren()) do
 		if npc:IsA("Model") and npc ~= player.Character then
 			local hum = npc:FindFirstChild("Humanoid")
 			local npcRoot = npc:FindFirstChild("HumanoidRootPart")
@@ -532,40 +530,92 @@ local function updateVisuals()
 		end
 	end
 	
-	-- Update tracers positions
 	updateTracers()
 end
 
--- ===== SAFE TELEPORT SYSTEM (ANTI-KICK) =====
-local function safeTeleportToNPC(npcName)
+-- ===== ULTRA SMOOTH TELEPORT (ANTI-KICK) =====
+local function ultraSmoothTeleport(targetPosition)
 	if state.isTeleporting then
-		return false, "Already teleporting..."
+		return false
 	end
 	
 	local root, _, _ = getCharComponents()
+	if not root then return false end
+	
+	state.isTeleporting = true
+	
+	local startPos = root.Position
+	local distance = (targetPosition - startPos).Magnitude
+	
+	-- If very close, just teleport
+	if distance < 10 then
+		root.CFrame = CFrame_new(targetPosition)
+		state.isTeleporting = false
+		return true
+	end
+	
+	-- Calculate travel time based on distance
+	local travelTime = distance / CONFIG.TELEPORT_SPEED
+	
+	-- If distance is huge, break into chunks
+	if distance > CONFIG.MAX_TELEPORT_DISTANCE then
+		local direction = (targetPosition - startPos).Unit
+		local numChunks = math.ceil(distance / CONFIG.MAX_TELEPORT_DISTANCE)
+		
+		for i = 1, numChunks do
+			if not state.isTeleporting then break end
+			
+			local chunkTarget
+			if i == numChunks then
+				chunkTarget = targetPosition
+			else
+				chunkTarget = startPos + (direction * CONFIG.MAX_TELEPORT_DISTANCE * i)
+			end
+			
+			local chunkDistance = (chunkTarget - root.Position).Magnitude
+			local chunkTime = chunkDistance / CONFIG.TELEPORT_SPEED
+			
+			local tweenInfo = TweenInfo.new(
+				chunkTime,
+				Enum.EasingStyle.Linear,
+				Enum.EasingDirection.Out
+			)
+			
+			local tween = TweenService:Create(root, tweenInfo, {CFrame = CFrame_new(chunkTarget)})
+			tween:Play()
+			tween.Completed:Wait()
+			
+			task.wait(0.1) -- Small delay between chunks
+		end
+	else
+		-- Single smooth tween
+		local tweenInfo = TweenInfo.new(
+			travelTime,
+			Enum.EasingStyle.Linear,
+			Enum.EasingDirection.Out
+		)
+		
+		local tween = TweenService:Create(root, tweenInfo, {CFrame = CFrame_new(targetPosition)})
+		tween:Play()
+		tween.Completed:Wait()
+	end
+	
+	state.isTeleporting = false
+	return true
+end
+
+local function safeTeleportToNPC(npcName)
+	local root, _, _ = getCharComponents()
 	if not root then return false, "Character not found" end
 	
-	for _, npc in ipairs(LiveNPCs:GetChildren()) do
+	for _, npc in ipairs(AliveFolder:GetChildren()) do
 		if npc.Name == npcName and npc:IsA("Model") then
 			local npcRoot = npc:FindFirstChild("HumanoidRootPart")
 			if npcRoot then
-				state.isTeleporting = true
+				local targetPos = npcRoot.Position + Vector3_new(0, 2, 5)
 				
-				-- Calculate target position (5 studs in front)
-				local targetCFrame = npcRoot.CFrame * CFrame_new(0, 0, 5)
-				
-				-- Smooth tween to avoid anticheat
-				local tweenInfo = TweenInfo.new(
-					CONFIG.TELEPORT_TWEEN_TIME,
-					Enum.EasingStyle.Linear,
-					Enum.EasingDirection.Out
-				)
-				
-				local tween = TweenService:Create(root, tweenInfo, {CFrame = targetCFrame})
-				tween:Play()
-				
-				tween.Completed:Connect(function()
-					state.isTeleporting = false
+				task.spawn(function()
+					ultraSmoothTeleport(targetPos)
 				end)
 				
 				return true, "Teleporting..."
@@ -578,7 +628,7 @@ end
 
 local function getNPCList()
 	local npcList = {}
-	for _, npc in ipairs(LiveNPCs:GetChildren()) do
+	for _, npc in ipairs(AliveFolder:GetChildren()) do
 		if npc:IsA("Model") and npc:FindFirstChild("HumanoidRootPart") then
 			if not table.find(npcList, npc.Name) then
 				table.insert(npcList, npc.Name)
@@ -587,6 +637,32 @@ local function getNPCList()
 	end
 	table.sort(npcList)
 	return npcList
+end
+
+-- ===== LOCK ON TARGET =====
+local function lockOnLoop()
+	if not state.lockOnEnabled then return end
+	
+	local camera = workspace.CurrentCamera
+	local target = state.lockedTarget
+	
+	-- If autofarm is active, use autofarm target
+	if state.autofarmEnabled and state.lockedNPC then
+		target = state.lockedNPC
+	end
+	
+	-- Otherwise find closest NPC
+	if not target or not target.Parent then
+		target = findClosestNPC()
+		state.lockedTarget = target
+	end
+	
+	if target then
+		local npcRoot = target:FindFirstChild("HumanoidRootPart")
+		if npcRoot then
+			camera.CFrame = CFrame_new(camera.CFrame.Position, npcRoot.Position)
+		end
+	end
 end
 
 -- ===== M1 MACRO =====
@@ -666,7 +742,7 @@ pcall(function()
 	CoreGui:FindFirstChild(CONFIG.GUI_NAME):Destroy()
 end)
 
--- ===== GUI CREATION (NS HUB STYLE) =====
+-- ===== GUI CREATION (NS HUB EXACT STYLE) =====
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = CONFIG.GUI_NAME
 screenGui.ResetOnSpawn = false
@@ -676,331 +752,579 @@ screenGui.Parent = CoreGui
 -- Main Frame
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2_new(0, 550, 0, 400)
-mainFrame.Position = UDim2_new(0.5, -275, 0.5, -200)
-mainFrame.BackgroundColor3 = Color3_fromRGB(15, 15, 22)
+mainFrame.Size = UDim2_new(0, 320, 0, 450)
+mainFrame.Position = UDim2_new(0, 20, 0.5, -225)
+mainFrame.BackgroundColor3 = Color3_fromRGB(13, 13, 18)
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
 mainFrame.Draggable = true
 mainFrame.Parent = screenGui
 
 local mainCorner = Instance.new("UICorner")
-mainCorner.CornerRadius = UDim.new(0, 10)
+mainCorner.CornerRadius = UDim.new(0, 8)
 mainCorner.Parent = mainFrame
 
--- Header Bar
-local headerBar = Instance.new("Frame")
-headerBar.Name = "HeaderBar"
-headerBar.Size = UDim2_new(1, 0, 0, 40)
-headerBar.BackgroundColor3 = Color3_fromRGB(20, 20, 28)
-headerBar.BorderSizePixel = 0
-headerBar.Parent = mainFrame
+-- Border Gradient
+local borderGradient = Instance.new("UIStroke")
+borderGradient.Color = Color3_fromRGB(100, 100, 120)
+borderGradient.Thickness = 1
+borderGradient.Transparency = 0.5
+borderGradient.Parent = mainFrame
+
+-- Header
+local header = Instance.new("Frame")
+header.Name = "Header"
+header.Size = UDim2_new(1, 0, 0, 35)
+header.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
+header.BorderSizePixel = 0
+header.Parent = mainFrame
 
 local headerCorner = Instance.new("UICorner")
-headerCorner.CornerRadius = UDim.new(0, 10)
-headerCorner.Parent = headerBar
+headerCorner.CornerRadius = UDim.new(0, 8)
+headerCorner.Parent = header
 
 local headerFill = Instance.new("Frame")
-headerFill.Size = UDim2_new(1, 0, 0, 10)
-headerFill.Position = UDim2_new(0, 0, 1, -10)
-headerFill.BackgroundColor3 = Color3_fromRGB(20, 20, 28)
+headerFill.Size = UDim2_new(1, 0, 0, 8)
+headerFill.Position = UDim2_new(0, 0, 1, -8)
+headerFill.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
 headerFill.BorderSizePixel = 0
-headerFill.Parent = headerBar
+headerFill.Parent = header
 
--- Title
+-- Title with Icon
+local titleContainer = Instance.new("Frame")
+titleContainer.Size = UDim2_new(1, -80, 1, 0)
+titleContainer.Position = UDim2_new(0, 10, 0, 0)
+titleContainer.BackgroundTransparency = 1
+titleContainer.Parent = header
+
+local titleIcon = Instance.new("TextLabel")
+titleIcon.Size = UDim2_new(0, 20, 1, 0)
+titleIcon.BackgroundTransparency = 1
+titleIcon.Text = "✦"
+titleIcon.Font = Enum.Font.GothamBold
+titleIcon.TextSize = 16
+titleIcon.TextColor3 = Color3_fromRGB(100, 180, 255)
+titleIcon.TextXAlignment = Enum.TextXAlignment.Left
+titleIcon.Parent = titleContainer
+
 local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2_new(1, -100, 1, 0)
-titleLabel.Position = UDim2_new(0, 15, 0, 0)
+titleLabel.Size = UDim2_new(1, -25, 1, 0)
+titleLabel.Position = UDim2_new(0, 25, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "FFRE GUI V3"
+titleLabel.Text = "NS HUB"
 titleLabel.Font = Enum.Font.GothamBold
-titleLabel.TextSize = 16
+titleLabel.TextSize = 13
 titleLabel.TextColor3 = Color3_white
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-titleLabel.Parent = headerBar
+titleLabel.Parent = titleContainer
 
--- Close Button
+local versionLabel = Instance.new("TextLabel")
+versionLabel.Size = UDim2_new(0, 80, 1, 0)
+versionLabel.Position = UDim2_new(1, -90, 0, 0)
+versionLabel.BackgroundTransparency = 1
+versionLabel.Text = "1.0" 
+versionLabel.Font = Enum.Font.Gotham
+versionLabel.TextSize = 11
+versionLabel.TextColor3 = Color3_fromRGB(120, 120, 140)
+versionLabel.TextXAlignment = Enum.TextXAlignment.Right
+versionLabel.Parent = header
+
+-- Close/Minimize Buttons
 local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2_new(0, 30, 0, 30)
-closeBtn.Position = UDim2_new(1, -35, 0, 5)
-closeBtn.BackgroundColor3 = Color3_fromRGB(200, 50, 50)
-closeBtn.Text = "X"
+closeBtn.Size = UDim2_new(0, 25, 0, 25)
+closeBtn.Position = UDim2_new(1, -30, 0, 5)
+closeBtn.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
+closeBtn.Text = "×"
 closeBtn.Font = Enum.Font.GothamBold
-closeBtn.TextSize = 16
-closeBtn.TextColor3 = Color3_white
+closeBtn.TextSize = 18
+closeBtn.TextColor3 = Color3_fromRGB(200, 200, 210)
 closeBtn.BorderSizePixel = 0
-closeBtn.Parent = headerBar
+closeBtn.Parent = header
 
 local closeBtnCorner = Instance.new("UICorner")
-closeBtnCorner.CornerRadius = UDim.new(0, 6)
+closeBtnCorner.CornerRadius = UDim.new(0, 4)
 closeBtnCorner.Parent = closeBtn
 
 closeBtn.MouseButton1Click:Connect(function()
 	screenGui:Destroy()
 end)
 
--- Tab Buttons Container
-local tabsContainer = Instance.new("Frame")
-tabsContainer.Size = UDim2_new(1, -20, 0, 35)
-tabsContainer.Position = UDim2_new(0, 10, 0, 50)
-tabsContainer.BackgroundTransparency = 1
-tabsContainer.Parent = mainFrame
+-- Sidebar
+local sidebar = Instance.new("Frame")
+sidebar.Name = "Sidebar"
+sidebar.Size = UDim2_new(0, 45, 1, -40)
+sidebar.Position = UDim2_new(0, 5, 0, 38)
+sidebar.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
+sidebar.BorderSizePixel = 0
+sidebar.Parent = mainFrame
 
-local tabsLayout = Instance.new("UIListLayout")
-tabsLayout.FillDirection = Enum.FillDirection.Horizontal
-tabsLayout.Padding = UDim.new(0, 8)
-tabsLayout.Parent = tabsContainer
+local sidebarCorner = Instance.new("UICorner")
+sidebarCorner.CornerRadius = UDim.new(0, 6)
+sidebarCorner.Parent = sidebar
 
--- Helper: Create Tab
-local function createTab(name, text)
-	local tab = Instance.new("TextButton")
-	tab.Name = name
-	tab.Size = UDim2_new(0, 125, 0, 35)
-	tab.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
-	tab.Text = text
-	tab.Font = Enum.Font.GothamBold
-	tab.TextSize = 13
-	tab.TextColor3 = Color3_fromRGB(180, 180, 190)
-	tab.BorderSizePixel = 0
-	tab.AutoButtonColor = false
-	tab.Parent = tabsContainer
+local sidebarLayout = Instance.new("UIListLayout")
+sidebarLayout.Padding = UDim.new(0, 5)
+sidebarLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+sidebarLayout.Parent = sidebar
+
+local sidebarPadding = Instance.new("UIPadding")
+sidebarPadding.PaddingTop = UDim.new(0, 8)
+sidebarPadding.Parent = sidebar
+
+-- Helper: Create Sidebar Button
+local function createSidebarBtn(icon, name)
+	local btn = Instance.new("TextButton")
+	btn.Name = name
+	btn.Size = UDim2_new(0, 35, 0, 35)
+	btn.BackgroundColor3 = Color3_fromRGB(22, 22, 30)
+	btn.Text = icon
+	btn.Font = Enum.Font.GothamBold
+	btn.TextSize = 16
+	btn.TextColor3 = Color3_fromRGB(120, 120, 140)
+	btn.BorderSizePixel = 0
+	btn.AutoButtonColor = false
+	btn.Parent = sidebar
 	
-	local tabCorner = Instance.new("UICorner")
-	tabCorner.CornerRadius = UDim.new(0, 8)
-	tabCorner.Parent = tab
+	local btnCorner = Instance.new("UICorner")
+	btnCorner.CornerRadius = UDim.new(0, 6)
+	btnCorner.Parent = btn
 	
-	return tab
+	return btn
 end
 
-local combatTab = createTab("CombatTab", "⚔️ Combat")
-local visualTab = createTab("VisualTab", "👁️ Visual")
-local teleportTab = createTab("TeleportTab", "📍 Teleport")
-local configsTab = createTab("ConfigsTab", "⚙️ Configs")
+local combatBtn = createSidebarBtn("⚔", "CombatBtn")
+local visualBtn = createSidebarBtn("👁", "VisualBtn")
+local teleportBtn = createSidebarBtn("📍", "TeleportBtn")
+local configBtn = createSidebarBtn("⚙", "ConfigBtn")
 
--- Content Container
-local contentContainer = Instance.new("Frame")
-contentContainer.Size = UDim2_new(1, -20, 1, -100)
-contentContainer.Position = UDim2_new(0, 10, 0, 90)
-contentContainer.BackgroundTransparency = 1
-contentContainer.Parent = mainFrame
+-- Content Area
+local contentArea = Instance.new("Frame")
+contentArea.Name = "ContentArea"
+contentArea.Size = UDim2_new(1, -60, 1, -40)
+contentArea.Position = UDim2_new(0, 55, 0, 38)
+contentArea.BackgroundTransparency = 1
+contentArea.Parent = mainFrame
 
--- Create Pages
+-- Helper: Create Page
 local function createPage(name)
 	local page = Instance.new("ScrollingFrame")
 	page.Name = name
-	page.Size = UDim2_new(1, 0, 1, 0)
+	page.Size = UDim2_new(1, -5, 1, 0)
 	page.BackgroundTransparency = 1
 	page.BorderSizePixel = 0
-	page.ScrollBarThickness = 4
-	page.ScrollBarImageColor3 = Color3_fromRGB(80, 80, 120)
+	page.ScrollBarThickness = 3
+	page.ScrollBarImageColor3 = Color3_fromRGB(80, 80, 100)
 	page.CanvasSize = UDim2_new(0, 0, 0, 0)
 	page.AutomaticCanvasSize = Enum.AutomaticSize.Y
 	page.Visible = false
-	page.Parent = contentContainer
+	page.Parent = contentArea
 	
 	local pageLayout = Instance.new("UIListLayout")
-	pageLayout.Padding = UDim.new(0, 10)
+	pageLayout.Padding = UDim.new(0, 8)
 	pageLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	pageLayout.Parent = page
+	
+	local pagePadding = Instance.new("UIPadding")
+	pagePadding.PaddingRight = UDim.new(0, 5)
+	pagePadding.Parent = page
 	
 	return page
 end
 
-local scrollFrame = createPage("CombatPage")
+local combatPage = createPage("CombatPage")
 local visualPage = createPage("VisualPage")
 local teleportPage = createPage("TeleportPage")
-local configsContainer = createPage("ConfigsPage")
+local configPage = createPage("ConfigPage")
 
--- Tab Switching
-local function switchPage(page, tab)
-	scrollFrame.Visible = false
+-- Page Switching
+local function switchPage(page, btn)
+	combatPage.Visible = false
 	visualPage.Visible = false
 	teleportPage.Visible = false
-	configsContainer.Visible = false
+	configPage.Visible = false
 	
-	combatTab.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
-	combatTab.TextColor3 = Color3_fromRGB(180, 180, 190)
-	visualTab.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
-	visualTab.TextColor3 = Color3_fromRGB(180, 180, 190)
-	teleportTab.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
-	teleportTab.TextColor3 = Color3_fromRGB(180, 180, 190)
-	configsTab.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
-	configsTab.TextColor3 = Color3_fromRGB(180, 180, 190)
+	combatBtn.BackgroundColor3 = Color3_fromRGB(22, 22, 30)
+	combatBtn.TextColor3 = Color3_fromRGB(120, 120, 140)
+	visualBtn.BackgroundColor3 = Color3_fromRGB(22, 22, 30)
+	visualBtn.TextColor3 = Color3_fromRGB(120, 120, 140)
+	teleportBtn.BackgroundColor3 = Color3_fromRGB(22, 22, 30)
+	teleportBtn.TextColor3 = Color3_fromRGB(120, 120, 140)
+	configBtn.BackgroundColor3 = Color3_fromRGB(22, 22, 30)
+	configBtn.TextColor3 = Color3_fromRGB(120, 120, 140)
 	
 	page.Visible = true
-	tab.BackgroundColor3 = Color3_fromRGB(80, 120, 200)
-	tab.TextColor3 = Color3_white
+	btn.BackgroundColor3 = Color3_fromRGB(100, 180, 255)
+	btn.TextColor3 = Color3_white
 end
 
-combatTab.MouseButton1Click:Connect(function()
-	switchPage(scrollFrame, combatTab)
-	state.currentPage = "combat"
+combatBtn.MouseButton1Click:Connect(function()
+	switchPage(combatPage, combatBtn)
 end)
 
-visualTab.MouseButton1Click:Connect(function()
-	switchPage(visualPage, visualTab)
-	state.currentPage = "visual"
+visualBtn.MouseButton1Click:Connect(function()
+	switchPage(visualPage, visualBtn)
 end)
 
-teleportTab.MouseButton1Click:Connect(function()
-	switchPage(teleportPage, teleportTab)
-	state.currentPage = "teleport"
+teleportBtn.MouseButton1Click:Connect(function()
+	switchPage(teleportPage, teleportBtn)
 end)
 
-configsTab.MouseButton1Click:Connect(function()
-	switchPage(configsContainer, configsTab)
-	state.currentPage = "configs"
+configBtn.MouseButton1Click:Connect(function()
+	switchPage(configPage, configBtn)
 end)
 
 -- Initialize
-switchPage(scrollFrame, combatTab)
+switchPage(combatPage, combatBtn)
+
+-- Helper: Create Section Header
+local function createSectionHeader(parent, text)
+	local header = Instance.new("Frame")
+	header.Size = UDim2_new(1, 0, 0, 30)
+	header.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
+	header.BorderSizePixel = 0
+	header.Parent = parent
+	
+	local headerCorner = Instance.new("UICorner")
+	headerCorner.CornerRadius = UDim.new(0, 6)
+	headerCorner.Parent = header
+	
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2_new(1, -15, 1, 0)
+	label.Position = UDim2_new(0, 10, 0, 0)
+	label.BackgroundTransparency = 1
+	label.Text = text
+	label.Font = Enum.Font.GothamBold
+	label.TextSize = 12
+	label.TextColor3 = Color3_fromRGB(180, 180, 200)
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = header
+	
+	local icon = Instance.new("TextLabel")
+	icon.Size = UDim2_new(0, 15, 1, 0)
+	icon.BackgroundTransparency = 1
+	icon.Text = "◇"
+	icon.Font = Enum.Font.GothamBold
+	icon.TextSize = 10
+	icon.TextColor3 = Color3_fromRGB(100, 180, 255)
+	icon.TextXAlignment = Enum.TextXAlignment.Left
+	icon.Parent = label
+	
+	return header
+end
 
 -- Helper: Create Toggle
-local function createToggle(parent, labelText, defaultState)
+local function createToggle(parent, labelText, descText, defaultState)
 	local container = Instance.new("Frame")
-	container.Size = UDim2_new(1, -5, 0, 40)
-	container.BackgroundColor3 = Color3_fromRGB(20, 20, 28)
+	container.Size = UDim2_new(1, 0, 0, descText and 55 or 40)
+	container.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
 	container.BorderSizePixel = 0
 	container.Parent = parent
 	
 	local containerCorner = Instance.new("UICorner")
-	containerCorner.CornerRadius = UDim.new(0, 8)
+	containerCorner.CornerRadius = UDim.new(0, 6)
 	containerCorner.Parent = container
 	
 	local label = Instance.new("TextLabel")
-	label.Size = UDim2_new(0.65, 0, 1, 0)
-	label.Position = UDim2_new(0, 12, 0, 0)
+	label.Size = UDim2_new(0.7, -10, 0, 20)
+	label.Position = UDim2_new(0, 10, 0, descText and 8 or 10)
 	label.BackgroundTransparency = 1
 	label.Text = labelText
 	label.Font = Enum.Font.Gotham
-	label.TextSize = 13
+	label.TextSize = 12
 	label.TextColor3 = Color3_white
 	label.TextXAlignment = Enum.TextXAlignment.Left
 	label.Parent = container
 	
-	local toggle = Instance.new("TextButton")
-	toggle.Size = UDim2_new(0, 70, 0, 28)
-	toggle.Position = UDim2_new(1, -80, 0.5, -14)
-	toggle.BackgroundColor3 = defaultState and Color3_fromRGB(80, 200, 120) or Color3_fromRGB(70, 70, 90)
-	toggle.Text = defaultState and "ON" or "OFF"
-	toggle.Font = Enum.Font.GothamBold
-	toggle.TextSize = 12
-	toggle.TextColor3 = Color3_white
-	toggle.BorderSizePixel = 0
-	toggle.AutoButtonColor = false
-	toggle.Parent = container
+	if descText then
+		local desc = Instance.new("TextLabel")
+		desc.Size = UDim2_new(1, -20, 0, 18)
+		desc.Position = UDim2_new(0, 10, 0, 28)
+		desc.BackgroundTransparency = 1
+		desc.Text = descText
+		desc.Font = Enum.Font.Gotham
+		desc.TextSize = 9
+		desc.TextColor3 = Color3_fromRGB(120, 120, 140)
+		desc.TextXAlignment = Enum.TextXAlignment.Left
+		desc.TextWrapped = true
+		desc.Parent = container
+	end
 	
-	local toggleCorner = Instance.new("UICorner")
-	toggleCorner.CornerRadius = UDim.new(0, 6)
-	toggleCorner.Parent = toggle
+	-- Toggle Button (NS HUB Style)
+	local toggleBg = Instance.new("Frame")
+	toggleBg.Size = UDim2_new(0, 38, 0, 20)
+	toggleBg.Position = UDim2_new(1, -45, 0, descText and 10 or 10)
+	toggleBg.BackgroundColor3 = defaultState and Color3_fromRGB(100, 180, 255) or Color3_fromRGB(40, 40, 55)
+	toggleBg.BorderSizePixel = 0
+	toggleBg.Parent = container
 	
-	return container, toggle
+	local toggleBgCorner = Instance.new("UICorner")
+	toggleBgCorner.CornerRadius = UDim.new(1, 0)
+	toggleBgCorner.Parent = toggleBg
+	
+	local toggleCircle = Instance.new("Frame")
+	toggleCircle.Size = UDim2_new(0, 16, 0, 16)
+	toggleCircle.Position = defaultState and UDim2_new(1, -18, 0.5, -8) or UDim2_new(0, 2, 0.5, -8)
+	toggleCircle.BackgroundColor3 = Color3_white
+	toggleCircle.BorderSizePixel = 0
+	toggleCircle.Parent = toggleBg
+	
+	local toggleCircleCorner = Instance.new("UICorner")
+	toggleCircleCorner.CornerRadius = UDim.new(1, 0)
+	toggleCircleCorner.Parent = toggleCircle
+	
+	local toggleBtn = Instance.new("TextButton")
+	toggleBtn.Size = UDim2_new(1, 0, 1, 0)
+	toggleBtn.BackgroundTransparency = 1
+	toggleBtn.Text = ""
+	toggleBtn.Parent = toggleBg
+	
+	return container, toggleBtn, toggleBg, toggleCircle
 end
 
--- Helper: Create Input
-local function createInputField(parent, labelText, placeholder, defaultValue)
+-- Helper: Create Slider
+local function createSlider(parent, labelText, minVal, maxVal, defaultVal)
 	local container = Instance.new("Frame")
-	container.Size = UDim2_new(1, -5, 0, 65)
-	container.BackgroundColor3 = Color3_fromRGB(20, 20, 28)
+	container.Size = UDim2_new(1, 0, 0, 50)
+	container.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
 	container.BorderSizePixel = 0
 	container.Parent = parent
 	
 	local containerCorner = Instance.new("UICorner")
-	containerCorner.CornerRadius = UDim.new(0, 8)
+	containerCorner.CornerRadius = UDim.new(0, 6)
 	containerCorner.Parent = container
 	
 	local label = Instance.new("TextLabel")
-	label.Size = UDim2_new(1, -20, 0, 22)
-	label.Position = UDim2_new(0, 12, 0, 8)
+	label.Size = UDim2_new(0.6, 0, 0, 18)
+	label.Position = UDim2_new(0, 10, 0, 8)
 	label.BackgroundTransparency = 1
 	label.Text = labelText
-	label.Font = Enum.Font.GothamBold
-	label.TextSize = 13
+	label.Font = Enum.Font.Gotham
+	label.TextSize = 11
 	label.TextColor3 = Color3_white
 	label.TextXAlignment = Enum.TextXAlignment.Left
 	label.Parent = container
 	
-	local input = Instance.new("TextBox")
-	input.Size = UDim2_new(1, -24, 0, 28)
-	input.Position = UDim2_new(0, 12, 0, 32)
-	input.BackgroundColor3 = Color3_fromRGB(30, 30, 40)
-	input.PlaceholderText = placeholder
-	input.Text = defaultValue or ""
-	input.Font = Enum.Font.Gotham
-	input.TextSize = 12
-	input.TextColor3 = Color3_white
-	input.BorderSizePixel = 0
-	input.ClearTextOnFocus = false
-	input.Parent = container
+	local valueLabel = Instance.new("TextLabel")
+	valueLabel.Size = UDim2_new(0, 50, 0, 18)
+	valueLabel.Position = UDim2_new(1, -55, 0, 8)
+	valueLabel.BackgroundTransparency = 1
+	valueLabel.Text = tostring(defaultVal)
+	valueLabel.Font = Enum.Font.GothamBold
+	valueLabel.TextSize = 11
+	valueLabel.TextColor3 = Color3_fromRGB(100, 180, 255)
+	valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+	valueLabel.Parent = container
 	
-	local inputCorner = Instance.new("UICorner")
-	inputCorner.CornerRadius = UDim.new(0, 6)
-	inputCorner.Parent = input
+	-- Slider
+	local sliderBg = Instance.new("Frame")
+	sliderBg.Size = UDim2_new(1, -20, 0, 4)
+	sliderBg.Position = UDim2_new(0, 10, 1, -15)
+	sliderBg.BackgroundColor3 = Color3_fromRGB(30, 30, 42)
+	sliderBg.BorderSizePixel = 0
+	sliderBg.Parent = container
 	
-	return container, input
+	local sliderBgCorner = Instance.new("UICorner")
+	sliderBgCorner.CornerRadius = UDim.new(1, 0)
+	sliderBgCorner.Parent = sliderBg
+	
+	local sliderFill = Instance.new("Frame")
+	sliderFill.Size = UDim2_new((defaultVal - minVal) / (maxVal - minVal), 0, 1, 0)
+	sliderFill.BackgroundColor3 = Color3_fromRGB(100, 180, 255)
+	sliderFill.BorderSizePixel = 0
+	sliderFill.Parent = sliderBg
+	
+	local sliderFillCorner = Instance.new("UICorner")
+	sliderFillCorner.CornerRadius = UDim.new(1, 0)
+	sliderFillCorner.Parent = sliderFill
+	
+	local sliderBtn = Instance.new("TextButton")
+	sliderBtn.Size = UDim2_new(1, 0, 1, 10)
+	sliderBtn.Position = UDim2_new(0, 0, 0, -5)
+	sliderBtn.BackgroundTransparency = 1
+	sliderBtn.Text = ""
+	sliderBtn.Parent = sliderBg
+	
+	return container, sliderBtn, sliderFill, valueLabel, minVal, maxVal
 end
 
 -- Helper: Create Button
-local function createConfigButton(parent, text, color)
+local function createButton(parent, text, color)
 	local btn = Instance.new("TextButton")
-	btn.Size = UDim2_new(1, -5, 0, 40)
-	btn.BackgroundColor3 = color
+	btn.Size = UDim2_new(1, 0, 0, 35)
+	btn.BackgroundColor3 = color or Color3_fromRGB(100, 180, 255)
 	btn.Text = text
 	btn.Font = Enum.Font.GothamBold
-	btn.TextSize = 13
+	btn.TextSize = 12
 	btn.TextColor3 = Color3_white
 	btn.BorderSizePixel = 0
 	btn.AutoButtonColor = false
 	btn.Parent = parent
 	
 	local btnCorner = Instance.new("UICorner")
-	btnCorner.CornerRadius = UDim.new(0, 8)
+	btnCorner.CornerRadius = UDim.new(0, 6)
 	btnCorner.Parent = btn
 	
 	return btn
 end
 
+-- Helper: Create Input
+local function createInput(parent, labelText, placeholder)
+	local container = Instance.new("Frame")
+	container.Size = UDim2_new(1, 0, 0, 60)
+	container.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
+	container.BorderSizePixel = 0
+	container.Parent = parent
+	
+	local containerCorner = Instance.new("UICorner")
+	containerCorner.CornerRadius = UDim.new(0, 6)
+	containerCorner.Parent = container
+	
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2_new(1, -20, 0, 18)
+	label.Position = UDim2_new(0, 10, 0, 8)
+	label.BackgroundTransparency = 1
+	label.Text = labelText
+	label.Font = Enum.Font.GothamBold
+	label.TextSize = 11
+	label.TextColor3 = Color3_fromRGB(180, 180, 200)
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = container
+	
+	local input = Instance.new("TextBox")
+	input.Size = UDim2_new(1, -20, 0, 28)
+	input.Position = UDim2_new(0, 10, 0, 28)
+	input.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
+	input.PlaceholderText = placeholder
+	input.Text = ""
+	input.Font = Enum.Font.Gotham
+	input.TextSize = 11
+	input.TextColor3 = Color3_white
+	input.BorderSizePixel = 0
+	input.ClearTextOnFocus = false
+	input.Parent = container
+	
+	local inputCorner = Instance.new("UICorner")
+	inputCorner.CornerRadius = UDim.new(0, 4)
+	inputCorner.Parent = input
+	
+	local inputPadding = Instance.new("UIPadding")
+	inputPadding.PaddingLeft = UDim.new(0, 8)
+	inputPadding.Parent = input
+	
+	return container, input
+end
+
 -- ===== COMBAT PAGE =====
-local autofarmContainer, autofarmToggle = createToggle(scrollFrame, "🤖 Auto Farm", state.autofarmEnabled)
-local speedContainer, speedToggle = createToggle(scrollFrame, "⚡ Speed Boost", state.speedEnabled)
-local speedInputContainer, speedInput = createInputField(scrollFrame, "Speed Value", "160", tostring(state.speedValue))
-local jumpContainer, jumpToggle = createToggle(scrollFrame, "🚀 Infinite Jump", state.infiniteJumpEnabled)
-local m1Container, m1Toggle = createToggle(scrollFrame, "🖱️ M1 Macro (F2)", state.m1MacroEnabled)
-local m1InputContainer, m1Input = createInputField(scrollFrame, "M1 Click Delay", "0.15", tostring(state.m1ClickDelay))
+createSectionHeader(combatPage, "Combat Settings")
+
+local autofarmContainer, autofarmToggle, autofarmBg, autofarmCircle = createToggle(
+	combatPage, 
+	"Auto Farm", 
+	"Automatically farm the closest NPC",
+	state.autofarmEnabled
+)
+
+local lockOnContainer, lockOnToggle, lockOnBg, lockOnCircle = createToggle(
+	combatPage,
+	"Lock On Target",
+	"Camera locks onto nearest enemy",
+	state.lockOnEnabled
+)
+
+local m1Container, m1Toggle, m1Bg, m1Circle = createToggle(
+	combatPage,
+	"M1 Auto Click (F2)",
+	"Automatically click M1 button",
+	state.m1MacroEnabled
+)
+
+local m1SliderContainer, m1SliderBtn, m1SliderFill, m1ValueLabel, m1Min, m1Max = createSlider(
+	combatPage,
+	"M1 Click Delay",
+	0.05,
+	1,
+	state.m1ClickDelay
+)
+
+createSectionHeader(combatPage, "Movement Settings")
+
+local speedContainer, speedToggle, speedBg, speedCircle = createToggle(
+	combatPage,
+	"Speed Boost",
+	"Increase movement speed",
+	state.speedEnabled
+)
+
+local speedSliderContainer, speedSliderBtn, speedSliderFill, speedValueLabel, speedMin, speedMax = createSlider(
+	combatPage,
+	"Speed Value",
+	50,
+	300,
+	state.speedValue
+)
+
+local jumpContainer, jumpToggle, jumpBg, jumpCircle = createToggle(
+	combatPage,
+	"Infinite Jump",
+	"Jump infinitely without limit",
+	state.infiniteJumpEnabled
+)
 
 -- ===== VISUAL PAGE =====
-local espContainer, espToggle = createToggle(visualPage, "👁️ ESP (Highlight NPCs)", state.espEnabled)
-local tracersContainer, tracersToggle = createToggle(visualPage, "📏 Tracers (Lines to NPCs)", state.tracersEnabled)
-local healthBarsContainer, healthBarsToggle = createToggle(visualPage, "❤️ Health Bars", state.healthBarsEnabled)
+createSectionHeader(visualPage, "Visual Features")
+
+local espContainer, espToggle, espBg, espCircle = createToggle(
+	visualPage,
+	"ESP Highlights",
+	"See NPCs through walls",
+	state.espEnabled
+)
+
+local tracersContainer, tracersToggle, tracersBg, tracersCircle = createToggle(
+	visualPage,
+	"Tracers",
+	"Lines pointing to NPCs",
+	state.tracersEnabled
+)
+
+local healthBarsContainer, healthBarsToggle, healthBarsBg, healthBarsCircle = createToggle(
+	visualPage,
+	"Health Bars",
+	"Display NPC health bars",
+	state.healthBarsEnabled
+)
 
 -- ===== TELEPORT PAGE =====
-local tpInfoFrame = Instance.new("Frame")
-tpInfoFrame.Size = UDim2_new(1, -5, 0, 55)
-tpInfoFrame.BackgroundColor3 = Color3_fromRGB(80, 120, 200)
-tpInfoFrame.BorderSizePixel = 0
-tpInfoFrame.Parent = teleportPage
+createSectionHeader(teleportPage, "Safe Teleport System")
+
+local tpInfoContainer = Instance.new("Frame")
+tpInfoContainer.Size = UDim2_new(1, 0, 0, 60)
+tpInfoContainer.BackgroundColor3 = Color3_fromRGB(100, 180, 255)
+tpInfoContainer.BackgroundTransparency = 0.9
+tpInfoContainer.BorderSizePixel = 0
+tpInfoContainer.Parent = teleportPage
 
 local tpInfoCorner = Instance.new("UICorner")
-tpInfoCorner.CornerRadius = UDim.new(0, 8)
-tpInfoCorner.Parent = tpInfoFrame
+tpInfoCorner.CornerRadius = UDim.new(0, 6)
+tpInfoCorner.Parent = tpInfoContainer
 
 local tpInfoLabel = Instance.new("TextLabel")
 tpInfoLabel.Size = UDim2_new(1, -20, 1, 0)
 tpInfoLabel.Position = UDim2_new(0, 10, 0, 0)
 tpInfoLabel.BackgroundTransparency = 1
-tpInfoLabel.Text = "📍 Safe Teleport System\nClick any NPC to teleport (anti-kick protection)"
-tpInfoLabel.Font = Enum.Font.GothamBold
-tpInfoLabel.TextSize = 13
+tpInfoLabel.Text = "📍 Ultra Smooth Teleport\nAnti-kick protection for long distances\nClick any NPC to teleport safely"
+tpInfoLabel.Font = Enum.Font.Gotham
+tpInfoLabel.TextSize = 10
 tpInfoLabel.TextColor3 = Color3_white
 tpInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
 tpInfoLabel.TextWrapped = true
-tpInfoLabel.Parent = tpInfoFrame
+tpInfoLabel.Parent = tpInfoContainer
 
-local refreshNPCBtn = createConfigButton(teleportPage, "🔄 Refresh NPC List", Color3_fromRGB(80, 200, 120))
+local refreshNPCBtn = createButton(teleportPage, "🔄 Refresh NPC List", Color3_fromRGB(80, 200, 120))
 
 local npcListContainer = Instance.new("Frame")
 npcListContainer.Name = "NPCListContainer"
-npcListContainer.Size = UDim2_new(1, -5, 0, 0)
+npcListContainer.Size = UDim2_new(1, 0, 0, 0)
 npcListContainer.AutomaticSize = Enum.AutomaticSize.Y
 npcListContainer.BackgroundTransparency = 1
 npcListContainer.Parent = teleportPage
@@ -1021,35 +1345,39 @@ local function populateNPCList()
 	
 	for _, npcName in ipairs(npcList) do
 		local npcBtn = Instance.new("TextButton")
-		npcBtn.Size = UDim2_new(1, 0, 0, 35)
-		npcBtn.BackgroundColor3 = Color3_fromRGB(20, 20, 28)
-		npcBtn.Text = "📌 " .. npcName
+		npcBtn.Size = UDim2_new(1, 0, 0, 32)
+		npcBtn.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
+		npcBtn.Text = "   📌 " .. npcName
 		npcBtn.Font = Enum.Font.Gotham
-		npcBtn.TextSize = 12
+		npcBtn.TextSize = 11
 		npcBtn.TextColor3 = Color3_white
 		npcBtn.TextXAlignment = Enum.TextXAlignment.Left
 		npcBtn.BorderSizePixel = 0
 		npcBtn.AutoButtonColor = false
 		npcBtn.Parent = npcListContainer
 		
-		local npcBtnPadding = Instance.new("UIPadding")
-		npcBtnPadding.PaddingLeft = UDim.new(0, 10)
-		npcBtnPadding.Parent = npcBtn
-		
 		local npcBtnCorner = Instance.new("UICorner")
 		npcBtnCorner.CornerRadius = UDim.new(0, 6)
 		npcBtnCorner.Parent = npcBtn
+		
+		npcBtn.MouseEnter:Connect(function()
+			npcBtn.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
+		end)
+		
+		npcBtn.MouseLeave:Connect(function()
+			npcBtn.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
+		end)
 		
 		npcBtn.MouseButton1Click:Connect(function()
 			local success, msg = safeTeleportToNPC(npcName)
 			if success then
 				npcBtn.BackgroundColor3 = Color3_fromRGB(80, 200, 120)
 				task.wait(0.5)
-				npcBtn.BackgroundColor3 = Color3_fromRGB(20, 20, 28)
+				npcBtn.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
 			else
 				npcBtn.BackgroundColor3 = Color3_fromRGB(200, 50, 50)
 				task.wait(0.5)
-				npcBtn.BackgroundColor3 = Color3_fromRGB(20, 20, 28)
+				npcBtn.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
 			end
 		end)
 	end
@@ -1062,94 +1390,76 @@ task.spawn(function()
 	populateNPCList()
 end)
 
--- ===== CONFIGS PAGE =====
+-- ===== CONFIG PAGE =====
+createSectionHeader(configPage, "Configuration Manager")
 
 local configPathInfo = Instance.new("Frame")
-configPathInfo.Size = UDim2_new(1, -5, 0, 70)
-configPathInfo.BackgroundColor3 = Color3_fromRGB(80, 120, 200)
+configPathInfo.Size = UDim2_new(1, 0, 0, 60)
+configPathInfo.BackgroundColor3 = Color3_fromRGB(100, 180, 255)
+configPathInfo.BackgroundTransparency = 0.9
 configPathInfo.BorderSizePixel = 0
-configPathInfo.Parent = configsContainer
+configPathInfo.Parent = configPage
 
 local configPathCorner = Instance.new("UICorner")
-configPathCorner.CornerRadius = UDim.new(0, 8)
+configPathCorner.CornerRadius = UDim.new(0, 6)
 configPathCorner.Parent = configPathInfo
 
-local configPathTitle = Instance.new("TextLabel")
-configPathTitle.Size = UDim2_new(1, -20, 0, 20)
-configPathTitle.Position = UDim2_new(0, 10, 0, 5)
-configPathTitle.BackgroundTransparency = 1
-configPathTitle.Text = "💾 Save Location:"
-configPathTitle.Font = Enum.Font.GothamBold
-configPathTitle.TextSize = 13
-configPathTitle.TextColor3 = Color3_white
-configPathTitle.TextXAlignment = Enum.TextXAlignment.Left
-configPathTitle.Parent = configPathInfo
-
 local configPathLabel = Instance.new("TextLabel")
-configPathLabel.Size = UDim2_new(1, -20, 0, 40)
-configPathLabel.Position = UDim2_new(0, 10, 0, 25)
+configPathLabel.Size = UDim2_new(1, -20, 1, 0)
+configPathLabel.Position = UDim2_new(0, 10, 0, 0)
 configPathLabel.BackgroundTransparency = 1
-configPathLabel.Text = CONFIG.CONFIGS_FOLDER
+configPathLabel.Text = "💾 Save Location:\n" .. CONFIG.CONFIGS_FOLDER
 configPathLabel.Font = Enum.Font.Gotham
-configPathLabel.TextSize = 10
-configPathLabel.TextColor3 = Color3_fromRGB(230, 230, 240)
+configPathLabel.TextSize = 9
+configPathLabel.TextColor3 = Color3_white
 configPathLabel.TextXAlignment = Enum.TextXAlignment.Left
 configPathLabel.TextWrapped = true
 configPathLabel.Parent = configPathInfo
 
-local configNameContainer, configNameBox = createInputField(configsContainer, "Config Name", "Enter name...")
+local configNameContainer, configNameInput = createInput(configPage, "Config Name", "Enter name...")
 
-local messageLabel = Instance.new("TextLabel")
-messageLabel.Name = "MessageLabel"
-messageLabel.Size = UDim2_new(1, -5, 0, 0)
-messageLabel.BackgroundTransparency = 1
-messageLabel.Text = ""
-messageLabel.Font = Enum.Font.GothamBold
-messageLabel.TextSize = 12
-messageLabel.TextColor3 = Color3_fromRGB(100, 255, 100)
-messageLabel.TextXAlignment = Enum.TextXAlignment.Center
-messageLabel.TextWrapped = true
-messageLabel.Visible = false
-messageLabel.Parent = configsContainer
+local createConfigBtn = createButton(configPage, "➕ Create Config", Color3_fromRGB(80, 200, 120))
+local loadConfigBtn = createButton(configPage, "📂 Load Selected", Color3_fromRGB(100, 180, 255))
+local overwriteConfigBtn = createButton(configPage, "✏️ Overwrite Selected", Color3_fromRGB(230, 126, 34))
+local refreshConfigBtn = createButton(configPage, "🔄 Refresh List", Color3_fromRGB(149, 165, 166))
 
-local function showMessage(scroll, text, color)
-	messageLabel.Text = text
-	messageLabel.TextColor3 = color
-	messageLabel.Visible = true
-	messageLabel.Size = UDim2_new(1, -5, 0, 30)
-	task.wait(3)
-	messageLabel.Visible = false
-	messageLabel.Size = UDim2_new(1, -5, 0, 0)
-end
-
-local createConfigBtn = createConfigButton(configsContainer, "➕ Create Config", Color3_fromRGB(80, 120, 200))
-local loadConfigBtn = createConfigButton(configsContainer, "📂 Load Config", Color3_fromRGB(120, 80, 200))
-local overwriteConfigBtn = createConfigButton(configsContainer, "✏️ Overwrite Config", Color3_fromRGB(200, 120, 80))
-local refreshListBtn = createConfigButton(configsContainer, "🔄 Refresh List", Color3_fromRGB(80, 200, 120))
-
-local configListTitle = Instance.new("TextLabel")
-configListTitle.Size = UDim2_new(1, -5, 0, 25)
-configListTitle.BackgroundTransparency = 1
-configListTitle.Text = "📋 Saved Configurations:"
-configListTitle.Font = Enum.Font.GothamBold
-configListTitle.TextSize = 13
-configListTitle.TextColor3 = Color3_white
-configListTitle.TextXAlignment = Enum.TextXAlignment.Left
-configListTitle.Parent = configsContainer
+createSectionHeader(configPage, "Saved Configurations")
 
 local configListContainer = Instance.new("Frame")
 configListContainer.Name = "ConfigListContainer"
-configListContainer.Size = UDim2_new(1, -5, 0, 0)
+configListContainer.Size = UDim2_new(1, 0, 0, 0)
 configListContainer.AutomaticSize = Enum.AutomaticSize.Y
 configListContainer.BackgroundTransparency = 1
-configListContainer.Parent = configsContainer
+configListContainer.Parent = configPage
 
 local configListLayout = Instance.new("UIListLayout")
 configListLayout.Padding = UDim.new(0, 5)
 configListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 configListLayout.Parent = configListContainer
 
-local function updateConfigList(scroll)
+local messageLabel = Instance.new("TextLabel")
+messageLabel.Size = UDim2_new(1, 0, 0, 0)
+messageLabel.BackgroundTransparency = 1
+messageLabel.Text = ""
+messageLabel.Font = Enum.Font.GothamBold
+messageLabel.TextSize = 10
+messageLabel.TextColor3 = Color3_fromRGB(100, 255, 100)
+messageLabel.TextXAlignment = Enum.TextXAlignment.Center
+messageLabel.TextWrapped = true
+messageLabel.Visible = false
+messageLabel.Parent = configPage
+
+local function showMessage(text, color)
+	messageLabel.Text = text
+	messageLabel.TextColor3 = color
+	messageLabel.Visible = true
+	messageLabel.Size = UDim2_new(1, 0, 0, 30)
+	task.wait(3)
+	messageLabel.Visible = false
+	messageLabel.Size = UDim2_new(1, 0, 0, 0)
+end
+
+local function updateConfigList()
 	for _, child in ipairs(configListContainer:GetChildren()) do
 		if child:IsA("Frame") and child.Name ~= "UIListLayout" then
 			child:Destroy()
@@ -1160,8 +1470,8 @@ local function updateConfigList(scroll)
 	
 	for _, configName in ipairs(configs) do
 		local configItem = Instance.new("Frame")
-		configItem.Size = UDim2_new(1, 0, 0, 35)
-		configItem.BackgroundColor3 = Color3_fromRGB(20, 20, 28)
+		configItem.Size = UDim2_new(1, 0, 0, 32)
+		configItem.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
 		configItem.BorderSizePixel = 0
 		configItem.Parent = configListContainer
 		
@@ -1170,88 +1480,89 @@ local function updateConfigList(scroll)
 		configItemCorner.Parent = configItem
 		
 		local configItemBtn = Instance.new("TextButton")
-		configItemBtn.Size = UDim2_new(0.7, 0, 1, 0)
-		configItemBtn.Position = UDim2_new(0, 10, 0, 0)
+		configItemBtn.Size = UDim2_new(0.75, 0, 1, 0)
+		configItemBtn.Position = UDim2_new(0, 8, 0, 0)
 		configItemBtn.BackgroundTransparency = 1
 		configItemBtn.Text = "📄 " .. configName
 		configItemBtn.Font = Enum.Font.Gotham
-		configItemBtn.TextSize = 12
+		configItemBtn.TextSize = 10
 		configItemBtn.TextColor3 = Color3_white
 		configItemBtn.TextXAlignment = Enum.TextXAlignment.Left
 		configItemBtn.AutoButtonColor = false
 		configItemBtn.Parent = configItem
 		
 		local deleteBtn = Instance.new("TextButton")
-		deleteBtn.Size = UDim2_new(0, 60, 0, 25)
-		deleteBtn.Position = UDim2_new(1, -70, 0.5, -12.5)
+		deleteBtn.Size = UDim2_new(0, 50, 0, 24)
+		deleteBtn.Position = UDim2_new(1, -54, 0.5, -12)
 		deleteBtn.BackgroundColor3 = Color3_fromRGB(200, 50, 50)
-		deleteBtn.Text = "🗑️"
+		deleteBtn.Text = "🗑"
 		deleteBtn.Font = Enum.Font.GothamBold
-		deleteBtn.TextSize = 16
+		deleteBtn.TextSize = 14
 		deleteBtn.TextColor3 = Color3_white
 		deleteBtn.BorderSizePixel = 0
 		deleteBtn.AutoButtonColor = false
 		deleteBtn.Parent = configItem
 		
 		local deleteBtnCorner = Instance.new("UICorner")
-		deleteBtnCorner.CornerRadius = UDim.new(0, 6)
+		deleteBtnCorner.CornerRadius = UDim.new(0, 4)
 		deleteBtnCorner.Parent = deleteBtn
 		
 		configItemBtn.MouseButton1Click:Connect(function()
 			state.selectedConfig = configName
-			configNameBox.Text = configName
+			configNameInput.Text = configName
 			
 			for _, item in ipairs(configListContainer:GetChildren()) do
 				if item:IsA("Frame") then
-					item.BackgroundColor3 = Color3_fromRGB(20, 20, 28)
+					item.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
 				end
 			end
-			configItem.BackgroundColor3 = Color3_fromRGB(80, 120, 200)
+			configItem.BackgroundColor3 = Color3_fromRGB(100, 180, 255)
+			configItem.BackgroundTransparency = 0.8
 		end)
 		
 		deleteBtn.MouseButton1Click:Connect(function()
 			if ConfigSystem.deleteConfig(configName) then
-				showMessage(configsContainer, "✅ Deleted: " .. configName, Color3_fromRGB(100, 255, 100))
-				updateConfigList(configsContainer)
+				showMessage("✅ Deleted: " .. configName, Color3_fromRGB(100, 255, 100))
+				updateConfigList()
 				if state.selectedConfig == configName then
 					state.selectedConfig = nil
-					configNameBox.Text = ""
+					configNameInput.Text = ""
 				end
 			else
-				showMessage(configsContainer, "❌ Failed to delete!", Color3_fromRGB(255, 100, 100))
+				showMessage("❌ Failed to delete", Color3_fromRGB(255, 100, 100))
 			end
 		end)
 	end
 end
 
 createConfigBtn.MouseButton1Click:Connect(function()
-	local configName = configNameBox.Text:gsub("%s+", " "):gsub("^%s*(.-)%s*$", "%1")
+	local configName = configNameInput.Text:gsub("%s+", " "):gsub("^%s*(.-)%s*$", "%1")
 	
 	if configName == "" then
-		showMessage(configsContainer, "⚠️ Enter a name!", Color3_fromRGB(255, 200, 100))
+		showMessage("⚠️ Enter a name!", Color3_fromRGB(255, 200, 100))
 		return
 	end
 	
 	if configName:match("[^%w%s%-_]") then
-		showMessage(configsContainer, "⚠️ Invalid characters!", Color3_fromRGB(255, 200, 100))
+		showMessage("⚠️ Invalid characters!", Color3_fromRGB(255, 200, 100))
 		return
 	end
 	
 	local success, err = ConfigSystem.saveConfig(configName, ConfigSystem.getCurrentSettings())
 	
 	if success then
-		showMessage(configsContainer, "✅ Saved: " .. configName, Color3_fromRGB(100, 255, 100))
+		showMessage("✅ Saved: " .. configName, Color3_fromRGB(100, 255, 100))
 		state.selectedConfig = configName
-		updateConfigList(configsContainer)
-		configNameBox.Text = ""
+		updateConfigList()
+		configNameInput.Text = ""
 	else
-		showMessage(configsContainer, "❌ Failed: " .. tostring(err), Color3_fromRGB(255, 100, 100))
+		showMessage("❌ Failed", Color3_fromRGB(255, 100, 100))
 	end
 end)
 
 loadConfigBtn.MouseButton1Click:Connect(function()
 	if not state.selectedConfig then
-		showMessage(configsContainer, "⚠️ Select a config!", Color3_fromRGB(255, 200, 100))
+		showMessage("⚠️ Select a config!", Color3_fromRGB(255, 200, 100))
 		return
 	end
 	
@@ -1259,44 +1570,51 @@ loadConfigBtn.MouseButton1Click:Connect(function()
 	
 	if settings then
 		ConfigSystem.applySettings(settings)
-		showMessage(configsContainer, "✅ Loaded: " .. state.selectedConfig, Color3_fromRGB(100, 255, 100))
+		showMessage("✅ Loaded: " .. state.selectedConfig, Color3_fromRGB(100, 255, 100))
 	else
-		showMessage(configsContainer, "❌ Failed to load!", Color3_fromRGB(255, 100, 100))
+		showMessage("❌ Failed to load", Color3_fromRGB(255, 100, 100))
 	end
 end)
 
 overwriteConfigBtn.MouseButton1Click:Connect(function()
 	if not state.selectedConfig then
-		showMessage(configsContainer, "⚠️ Select a config!", Color3_fromRGB(255, 200, 100))
+		showMessage("⚠️ Select a config!", Color3_fromRGB(255, 200, 100))
 		return
 	end
 	
 	local success, err = ConfigSystem.saveConfig(state.selectedConfig, ConfigSystem.getCurrentSettings())
 	
 	if success then
-		showMessage(configsContainer, "✅ Overwritten: " .. state.selectedConfig, Color3_fromRGB(100, 255, 100))
+		showMessage("✅ Overwritten: " .. state.selectedConfig, Color3_fromRGB(100, 255, 100))
 	else
-		showMessage(configsContainer, "❌ Failed: " .. tostring(err), Color3_fromRGB(255, 100, 100))
+		showMessage("❌ Failed", Color3_fromRGB(255, 100, 100))
 	end
 end)
 
-refreshListBtn.MouseButton1Click:Connect(function()
-	updateConfigList(configsContainer)
-	showMessage(configsContainer, "✅ Refreshed!", Color3_fromRGB(100, 255, 100))
+refreshConfigBtn.MouseButton1Click:Connect(function()
+	updateConfigList()
+	showMessage("✅ Refreshed", Color3_fromRGB(100, 255, 100))
 end)
 
 task.spawn(function()
 	task.wait(1)
-	updateConfigList(configsContainer)
+	updateConfigList()
 end)
 
--- ===== TOGGLE UPDATE FUNCTIONS =====
+-- ===== TOGGLE FUNCTIONS =====
 toggleUpdateFunctions = {}
 
+-- Autofarm
 toggleUpdateFunctions.autofarm = function(enabled)
 	state.autofarmEnabled = enabled
-	autofarmToggle.Text = enabled and "ON" or "OFF"
-	autofarmToggle.BackgroundColor3 = enabled and Color3_fromRGB(80, 200, 120) or Color3_fromRGB(70, 70, 90)
+	
+	TweenService:Create(autofarmBg, TweenInfo.new(0.2), {
+		BackgroundColor3 = enabled and Color3_fromRGB(100, 180, 255) or Color3_fromRGB(40, 40, 55)
+	}):Play()
+	
+	TweenService:Create(autofarmCircle, TweenInfo.new(0.2), {
+		Position = enabled and UDim2_new(1, -18, 0.5, -8) or UDim2_new(0, 2, 0.5, -8)
+	}):Play()
 	
 	if enabled then
 		disconnectConnection("autofarm")
@@ -1311,48 +1629,42 @@ autofarmToggle.MouseButton1Click:Connect(function()
 	toggleUpdateFunctions.autofarm(not state.autofarmEnabled)
 end)
 
-toggleUpdateFunctions.speed = function(enabled)
-	state.speedEnabled = enabled
-	speedToggle.Text = enabled and "ON" or "OFF"
-	speedToggle.BackgroundColor3 = enabled and Color3_fromRGB(80, 200, 120) or Color3_fromRGB(70, 70, 90)
+-- Lock On Target
+toggleUpdateFunctions.lockOn = function(enabled)
+	state.lockOnEnabled = enabled
+	
+	TweenService:Create(lockOnBg, TweenInfo.new(0.2), {
+		BackgroundColor3 = enabled and Color3_fromRGB(100, 180, 255) or Color3_fromRGB(40, 40, 55)
+	}):Play()
+	
+	TweenService:Create(lockOnCircle, TweenInfo.new(0.2), {
+		Position = enabled and UDim2_new(1, -18, 0.5, -8) or UDim2_new(0, 2, 0.5, -8)
+	}):Play()
 	
 	if enabled then
-		local value = tonumber(speedInput.Text)
-		if value and value > 0 then
-			state.speedValue = value
-		end
-		disconnectConnection("speed")
-		state.connections.speed = RunService.Heartbeat:Connect(speedLoop)
+		disconnectConnection("lockOn")
+		state.connections.lockOn = RunService.RenderStepped:Connect(lockOnLoop)
 	else
-		disconnectConnection("speed")
+		disconnectConnection("lockOn")
+		state.lockedTarget = nil
 	end
 end
 
-speedToggle.MouseButton1Click:Connect(function()
-	toggleUpdateFunctions.speed(not state.speedEnabled)
+lockOnToggle.MouseButton1Click:Connect(function()
+	toggleUpdateFunctions.lockOn(not state.lockOnEnabled)
 end)
 
-speedInput.FocusLost:Connect(function()
-	local value = tonumber(speedInput.Text)
-	if value and value > 0 then
-		state.speedValue = value
-	end
-end)
-
-toggleUpdateFunctions.infiniteJump = function(enabled)
-	state.infiniteJumpEnabled = enabled
-	jumpToggle.Text = enabled and "ON" or "OFF"
-	jumpToggle.BackgroundColor3 = enabled and Color3_fromRGB(80, 200, 120) or Color3_fromRGB(70, 70, 90)
-end
-
-jumpToggle.MouseButton1Click:Connect(function()
-	toggleUpdateFunctions.infiniteJump(not state.infiniteJumpEnabled)
-end)
-
+-- M1 Macro
 toggleUpdateFunctions.m1Macro = function(enabled)
 	state.m1MacroEnabled = enabled
-	m1Toggle.Text = enabled and "ON" or "OFF"
-	m1Toggle.BackgroundColor3 = enabled and Color3_fromRGB(80, 200, 120) or Color3_fromRGB(70, 70, 90)
+	
+	TweenService:Create(m1Bg, TweenInfo.new(0.2), {
+		BackgroundColor3 = enabled and Color3_fromRGB(100, 180, 255) or Color3_fromRGB(40, 40, 55)
+	}):Play()
+	
+	TweenService:Create(m1Circle, TweenInfo.new(0.2), {
+		Position = enabled and UDim2_new(1, -18, 0.5, -8) or UDim2_new(0, 2, 0.5, -8)
+	}):Play()
 	
 	if enabled then
 		disconnectConnection("m1macro")
@@ -1366,17 +1678,114 @@ m1Toggle.MouseButton1Click:Connect(function()
 	toggleUpdateFunctions.m1Macro(not state.m1MacroEnabled)
 end)
 
-m1Input.FocusLost:Connect(function()
-	local value = tonumber(m1Input.Text)
-	if value and value > 0 then
-		state.m1ClickDelay = value
+-- M1 Slider
+local m1Dragging = false
+m1SliderBtn.MouseButton1Down:Connect(function()
+	m1Dragging = true
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		m1Dragging = false
 	end
 end)
 
+UserInputService.InputChanged:Connect(function(input)
+	if m1Dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+		local sliderBg = m1SliderBtn.Parent
+		local mousePos = UserInputService:GetMouseLocation().X
+		local sliderPos = sliderBg.AbsolutePosition.X
+		local sliderSize = sliderBg.AbsoluteSize.X
+		local percent = math.clamp((mousePos - sliderPos) / sliderSize, 0, 1)
+		local value = m1Min + (percent * (m1Max - m1Min))
+		value = math.floor(value * 100) / 100
+		
+		state.m1ClickDelay = value
+		m1ValueLabel.Text = tostring(value)
+		m1SliderFill.Size = UDim2_new(percent, 0, 1, 0)
+	end
+end)
+
+-- Speed
+toggleUpdateFunctions.speed = function(enabled)
+	state.speedEnabled = enabled
+	
+	TweenService:Create(speedBg, TweenInfo.new(0.2), {
+		BackgroundColor3 = enabled and Color3_fromRGB(100, 180, 255) or Color3_fromRGB(40, 40, 55)
+	}):Play()
+	
+	TweenService:Create(speedCircle, TweenInfo.new(0.2), {
+		Position = enabled and UDim2_new(1, -18, 0.5, -8) or UDim2_new(0, 2, 0.5, -8)
+	}):Play()
+	
+	if enabled then
+		disconnectConnection("speed")
+		state.connections.speed = RunService.Heartbeat:Connect(speedLoop)
+	else
+		disconnectConnection("speed")
+	end
+end
+
+speedToggle.MouseButton1Click:Connect(function()
+	toggleUpdateFunctions.speed(not state.speedEnabled)
+end)
+
+-- Speed Slider
+local speedDragging = false
+speedSliderBtn.MouseButton1Down:Connect(function()
+	speedDragging = true
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		speedDragging = false
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if speedDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+		local sliderBg = speedSliderBtn.Parent
+		local mousePos = UserInputService:GetMouseLocation().X
+		local sliderPos = sliderBg.AbsolutePosition.X
+		local sliderSize = sliderBg.AbsoluteSize.X
+		local percent = math.clamp((mousePos - sliderPos) / sliderSize, 0, 1)
+		local value = speedMin + (percent * (speedMax - speedMin))
+		value = math.floor(value)
+		
+		state.speedValue = value
+		speedValueLabel.Text = tostring(value)
+		speedSliderFill.Size = UDim2_new(percent, 0, 1, 0)
+	end
+end)
+
+-- Infinite Jump
+toggleUpdateFunctions.infiniteJump = function(enabled)
+	state.infiniteJumpEnabled = enabled
+	
+	TweenService:Create(jumpBg, TweenInfo.new(0.2), {
+		BackgroundColor3 = enabled and Color3_fromRGB(100, 180, 255) or Color3_fromRGB(40, 40, 55)
+	}):Play()
+	
+	TweenService:Create(jumpCircle, TweenInfo.new(0.2), {
+		Position = enabled and UDim2_new(1, -18, 0.5, -8) or UDim2_new(0, 2, 0.5, -8)
+	}):Play()
+end
+
+jumpToggle.MouseButton1Click:Connect(function()
+	toggleUpdateFunctions.infiniteJump(not state.infiniteJumpEnabled)
+end)
+
+-- ESP
 toggleUpdateFunctions.esp = function(enabled)
 	state.espEnabled = enabled
-	espToggle.Text = enabled and "ON" or "OFF"
-	espToggle.BackgroundColor3 = enabled and Color3_fromRGB(80, 200, 120) or Color3_fromRGB(70, 70, 90)
+	
+	TweenService:Create(espBg, TweenInfo.new(0.2), {
+		BackgroundColor3 = enabled and Color3_fromRGB(100, 180, 255) or Color3_fromRGB(40, 40, 55)
+	}):Play()
+	
+	TweenService:Create(espCircle, TweenInfo.new(0.2), {
+		Position = enabled and UDim2_new(1, -18, 0.5, -8) or UDim2_new(0, 2, 0.5, -8)
+	}):Play()
 	
 	if not enabled then
 		clearAllESP()
@@ -1387,10 +1796,17 @@ espToggle.MouseButton1Click:Connect(function()
 	toggleUpdateFunctions.esp(not state.espEnabled)
 end)
 
+-- Tracers
 toggleUpdateFunctions.tracers = function(enabled)
 	state.tracersEnabled = enabled
-	tracersToggle.Text = enabled and "ON" or "OFF"
-	tracersToggle.BackgroundColor3 = enabled and Color3_fromRGB(80, 200, 120) or Color3_fromRGB(70, 70, 90)
+	
+	TweenService:Create(tracersBg, TweenInfo.new(0.2), {
+		BackgroundColor3 = enabled and Color3_fromRGB(100, 180, 255) or Color3_fromRGB(40, 40, 55)
+	}):Play()
+	
+	TweenService:Create(tracersCircle, TweenInfo.new(0.2), {
+		Position = enabled and UDim2_new(1, -18, 0.5, -8) or UDim2_new(0, 2, 0.5, -8)
+	}):Play()
 	
 	if not enabled then
 		clearAllTracers()
@@ -1401,10 +1817,17 @@ tracersToggle.MouseButton1Click:Connect(function()
 	toggleUpdateFunctions.tracers(not state.tracersEnabled)
 end)
 
+-- Health Bars
 toggleUpdateFunctions.healthBars = function(enabled)
 	state.healthBarsEnabled = enabled
-	healthBarsToggle.Text = enabled and "ON" or "OFF"
-	healthBarsToggle.BackgroundColor3 = enabled and Color3_fromRGB(80, 200, 120) or Color3_fromRGB(70, 70, 90)
+	
+	TweenService:Create(healthBarsBg, TweenInfo.new(0.2), {
+		BackgroundColor3 = enabled and Color3_fromRGB(100, 180, 255) or Color3_fromRGB(40, 40, 55)
+	}):Play()
+	
+	TweenService:Create(healthBarsCircle, TweenInfo.new(0.2), {
+		Position = enabled and UDim2_new(1, -18, 0.5, -8) or UDim2_new(0, 2, 0.5, -8)
+	}):Play()
 	
 	if not enabled then
 		clearAllHealthBars()
@@ -1462,25 +1885,15 @@ screenGui.Destroying:Connect(function()
 	clearAllHealthBars()
 end)
 
--- ===== STARTUP MESSAGE =====
+-- ===== STARTUP =====
 print("═══════════════════════════════════════════════")
-print("  FFRE GUI V3 - ULTIMATE EDITION")
+print("  NS HUB - FFRE EDITION V4")
 print("═══════════════════════════════════════════════")
-print("  ⚔️ Combat:")
-print("    • Auto Farm")
-print("    • Speed Boost")
-print("    • Infinite Jump")
-print("    • M1 Auto Click")
-print("  👁️ Visual:")
-print("    • ESP (Highlights)")
-print("    • Tracers (Fixed)")
-print("    • Health Bars")
-print("  📍 Teleport:")
-print("    • Safe TP (Anti-Kick)")
-print("  ⚙️ Configs:")
-print("    • Desktop Save: " .. CONFIG.CONFIGS_FOLDER)
+print("  ⚔️ Combat: Auto Farm | Lock On | M1 Macro")
+print("  ⚡ Movement: Speed | Infinite Jump")
+print("  👁️ Visual: ESP | Tracers | Health Bars")
+print("  📍 Teleport: Ultra Smooth (Anti-Kick)")
+print("  💾 Configs: " .. CONFIG.CONFIGS_FOLDER)
 print("═══════════════════════════════════════════════")
-print("  Keybinds:")
-print("    F1 - Toggle GUI")
-print("    F2 - Toggle M1 Macro")
+print("  F1 - Toggle GUI | F2 - Toggle M1 Macro")
 print("═══════════════════════════════════════════════")
