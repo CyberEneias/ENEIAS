@@ -1186,12 +1186,111 @@ local autofarmContainer, autofarmToggle, autofarmBg, autofarmCircle = createTogg
 	state.autofarmEnabled
 )
 
-local farmModeContainer, farmModeDropdown = createDropdown(
-	combatPage,
-	"Farm Position",
-	{"Behind", "Above"},
-	state.autofarmMode
-)
+-- CRIAR DROPDOWN CORRETAMENTE
+local farmModeContainer = Instance.new("Frame")
+farmModeContainer.Name = "FarmModeContainer"
+farmModeContainer.Size = UDim2_new(1, 0, 0, 50)
+farmModeContainer.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
+farmModeContainer.BorderSizePixel = 0
+farmModeContainer.Parent = combatPage
+
+local farmModeCorner = Instance.new("UICorner")
+farmModeCorner.CornerRadius = UDim.new(0, 6)
+farmModeCorner.Parent = farmModeContainer
+
+local farmModeLabel = Instance.new("TextLabel")
+farmModeLabel.Size = UDim2_new(1, -20, 0, 18)
+farmModeLabel.Position = UDim2_new(0, 10, 0, 6)
+farmModeLabel.BackgroundTransparency = 1
+farmModeLabel.Text = "Farm Position"
+farmModeLabel.Font = Enum.Font.GothamBold
+farmModeLabel.TextSize = 11
+farmModeLabel.TextColor3 = Color3_fromRGB(180, 180, 200)
+farmModeLabel.TextXAlignment = Enum.TextXAlignment.Left
+farmModeLabel.Parent = farmModeContainer
+
+local farmModeDropdown = Instance.new("TextButton")
+farmModeDropdown.Name = "FarmModeDropdown"
+farmModeDropdown.Size = UDim2_new(1, -20, 0, 22)
+farmModeDropdown.Position = UDim2_new(0, 10, 0, 24)
+farmModeDropdown.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
+farmModeDropdown.Text = state.autofarmMode .. "  ▼"
+farmModeDropdown.Font = Enum.Font.Gotham
+farmModeDropdown.TextSize = 11
+farmModeDropdown.TextColor3 = Color3_white
+farmModeDropdown.BorderSizePixel = 0
+farmModeDropdown.Parent = farmModeContainer
+
+local farmModeDropdownCorner = Instance.new("UICorner")
+farmModeDropdownCorner.CornerRadius = UDim.new(0, 4)
+farmModeDropdownCorner.Parent = farmModeDropdown
+
+local farmModeDropdownPadding = Instance.new("UIPadding")
+farmModeDropdownPadding.PaddingLeft = UDim.new(0, 8)
+farmModeDropdownPadding.Parent = farmModeDropdown
+
+local farmModeOptionsFrame = Instance.new("ScrollingFrame")
+farmModeOptionsFrame.Name = "OptionsFrame"
+farmModeOptionsFrame.Size = UDim2_new(1, -20, 0, 50) -- 2 opções * 25 = 50
+farmModeOptionsFrame.Position = UDim2_new(0, 10, 0, 48)
+farmModeOptionsFrame.BackgroundColor3 = Color3_fromRGB(20, 20, 28)
+farmModeOptionsFrame.BorderSizePixel = 0
+farmModeOptionsFrame.ScrollBarThickness = 3
+farmModeOptionsFrame.ScrollBarImageColor3 = Color3_fromRGB(80, 80, 100)
+farmModeOptionsFrame.Visible = false
+farmModeOptionsFrame.ZIndex = 10
+farmModeOptionsFrame.Parent = farmModeContainer
+
+local farmModeOptionsCorner = Instance.new("UICorner")
+farmModeOptionsCorner.CornerRadius = UDim.new(0, 4)
+farmModeOptionsCorner.Parent = farmModeOptionsFrame
+
+local farmModeOptionsLayout = Instance.new("UIListLayout")
+farmModeOptionsLayout.Padding = UDim.new(0, 2)
+farmModeOptionsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+farmModeOptionsLayout.Parent = farmModeOptionsFrame
+
+-- Criar opções "Behind" e "Above"
+local options = {"Behind", "Above"}
+
+for _, option in ipairs(options) do
+	local optionBtn = Instance.new("TextButton")
+	optionBtn.Size = UDim2_new(1, 0, 0, 23)
+	optionBtn.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
+	optionBtn.Text = option
+	optionBtn.Font = Enum.Font.Gotham
+	optionBtn.TextSize = 10
+	optionBtn.TextColor3 = Color3_white
+	optionBtn.BorderSizePixel = 0
+	optionBtn.AutoButtonColor = false
+	optionBtn.Parent = farmModeOptionsFrame
+	
+	optionBtn.MouseEnter:Connect(function()
+		optionBtn.BackgroundColor3 = Color3_fromRGB(35, 35, 45)
+	end)
+	
+	optionBtn.MouseLeave:Connect(function()
+		optionBtn.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
+	end)
+	
+	optionBtn.MouseButton1Click:Connect(function()
+		farmModeDropdown.Text = option .. "  ▼"
+		farmModeOptionsFrame.Visible = false
+		farmModeContainer.Size = UDim2_new(1, 0, 0, 50)
+		state.autofarmMode = option
+	end)
+end
+
+farmModeOptionsFrame.CanvasSize = UDim2.new(0, 0, 0, #options * 25)
+
+farmModeDropdown.MouseButton1Click:Connect(function()
+	farmModeOptionsFrame.Visible = not farmModeOptionsFrame.Visible
+	if farmModeOptionsFrame.Visible then
+		farmModeContainer.Size = UDim2_new(1, 0, 0, 50 + 50 + 5) -- 50 base + 50 opções + 5 padding
+	else
+		farmModeContainer.Size = UDim2_new(1, 0, 0, 50)
+	end
+end)
 
 local lockOnContainer, lockOnToggle, lockOnBg, lockOnCircle = createToggle(
 	combatPage,
