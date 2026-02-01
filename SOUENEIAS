@@ -602,16 +602,16 @@ local function autofarmLoop()
 
 	local targetCFrame
 	
-	if state.autofarmMode == "Behind" then
-		-- Behind NPC (original position)
+	if state.autofarmMode == "Above" then
+		-- Above NPC: jogador diretamente acima do NPC (como o ponto vermelho nas imagens)
+		local abovePos = npcRoot.Position + Vector3_new(0, CONFIG.ABOVE_HEIGHT, 0)
+		targetCFrame = CFrame_new(abovePos)
+	else
+		-- Behind NPC: atrás do NPC (padrão)
 		local npcCFrame = npcRoot.CFrame
 		local backVector = -npcCFrame.LookVector * CONFIG.BACK_DISTANCE
 		local upVector = Vector3_new(0, CONFIG.HEIGHT_OFFSET, 0)
 		targetCFrame = CFrame_new(npcRoot.Position + backVector + upVector)
-	else
-		-- Above NPC (new position from images)
-		local aboveVector = Vector3_new(0, CONFIG.ABOVE_HEIGHT, 0)
-		targetCFrame = CFrame_new(npcRoot.Position + aboveVector)
 	end
 
 	root.AssemblyLinearVelocity = Vector3_zero
@@ -1186,10 +1186,10 @@ local autofarmContainer, autofarmToggle, autofarmBg, autofarmCircle = createTogg
 	state.autofarmEnabled
 )
 
--- CRIAR DROPDOWN CORRETAMENTE
+-- Farm Position: seletor com duas opções visíveis (Behind / Above)
 local farmModeContainer = Instance.new("Frame")
 farmModeContainer.Name = "FarmModeContainer"
-farmModeContainer.Size = UDim2_new(1, 0, 0, 50)
+farmModeContainer.Size = UDim2_new(1, 0, 0, 78)
 farmModeContainer.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
 farmModeContainer.BorderSizePixel = 0
 farmModeContainer.Parent = combatPage
@@ -1209,91 +1209,92 @@ farmModeLabel.TextColor3 = Color3_fromRGB(180, 180, 200)
 farmModeLabel.TextXAlignment = Enum.TextXAlignment.Left
 farmModeLabel.Parent = farmModeContainer
 
-local farmModeDropdown = Instance.new("TextButton")
-farmModeDropdown.Name = "FarmModeDropdown"
-farmModeDropdown.Size = UDim2_new(1, -20, 0, 22)
-farmModeDropdown.Position = UDim2_new(0, 10, 0, 24)
-farmModeDropdown.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
-farmModeDropdown.Text = state.autofarmMode .. "  ▼"
-farmModeDropdown.Font = Enum.Font.Gotham
-farmModeDropdown.TextSize = 11
-farmModeDropdown.TextColor3 = Color3_white
-farmModeDropdown.BorderSizePixel = 0
-farmModeDropdown.Parent = farmModeContainer
+-- Frame que contém os dois botões (Behind e Above) sempre visíveis
+local farmModeButtonsFrame = Instance.new("Frame")
+farmModeButtonsFrame.Name = "FarmPositionButtons"
+farmModeButtonsFrame.Size = UDim2_new(1, -20, 0, 44)
+farmModeButtonsFrame.Position = UDim2_new(0, 10, 0, 28)
+farmModeButtonsFrame.BackgroundTransparency = 1
+farmModeButtonsFrame.Parent = farmModeContainer
 
-local farmModeDropdownCorner = Instance.new("UICorner")
-farmModeDropdownCorner.CornerRadius = UDim.new(0, 4)
-farmModeDropdownCorner.Parent = farmModeDropdown
+local farmModeButtonsLayout = Instance.new("UIListLayout")
+farmModeButtonsLayout.FillDirection = Enum.FillDirection.Horizontal
+farmModeButtonsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+farmModeButtonsLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+farmModeButtonsLayout.Padding = UDim.new(0, 8)
+farmModeButtonsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+farmModeButtonsLayout.Parent = farmModeButtonsFrame
 
-local farmModeDropdownPadding = Instance.new("UIPadding")
-farmModeDropdownPadding.PaddingLeft = UDim.new(0, 8)
-farmModeDropdownPadding.Parent = farmModeDropdown
+local farmModeBehindBtn = Instance.new("TextButton")
+farmModeBehindBtn.Name = "Option_Behind"
+farmModeBehindBtn.LayoutOrder = 1
+farmModeBehindBtn.Size = UDim2_new(0, 130, 0, 28)
+farmModeBehindBtn.BackgroundColor3 = Color3_fromRGB(100, 180, 255)
+farmModeBehindBtn.Text = "Behind"
+farmModeBehindBtn.Font = Enum.Font.GothamBold
+farmModeBehindBtn.TextSize = 11
+farmModeBehindBtn.TextColor3 = Color3_white
+farmModeBehindBtn.BorderSizePixel = 0
+farmModeBehindBtn.AutoButtonColor = false
+farmModeBehindBtn.Parent = farmModeButtonsFrame
 
-local farmModeOptionsFrame = Instance.new("ScrollingFrame")
-farmModeOptionsFrame.Name = "OptionsFrame"
-farmModeOptionsFrame.Size = UDim2_new(1, -20, 0, 60)
-farmModeOptionsFrame.Position = UDim2_new(0, 10, 0, 48)
-farmModeOptionsFrame.BackgroundColor3 = Color3_fromRGB(20, 20, 28)
-farmModeOptionsFrame.BorderSizePixel = 0
-farmModeOptionsFrame.ScrollBarThickness = 3
-farmModeOptionsFrame.ScrollBarImageColor3 = Color3_fromRGB(80, 80, 100)
-farmModeOptionsFrame.Visible = false
-farmModeOptionsFrame.ZIndex = 10
-farmModeOptionsFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-farmModeOptionsFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-farmModeOptionsFrame.Parent = farmModeContainer
+local farmModeBehindCorner = Instance.new("UICorner")
+farmModeBehindCorner.CornerRadius = UDim.new(0, 6)
+farmModeBehindCorner.Parent = farmModeBehindBtn
 
-local farmModeOptionsCorner = Instance.new("UICorner")
-farmModeOptionsCorner.CornerRadius = UDim.new(0, 4)
-farmModeOptionsCorner.Parent = farmModeOptionsFrame
+local farmModeAboveBtn = Instance.new("TextButton")
+farmModeAboveBtn.Name = "Option_Above"
+farmModeAboveBtn.LayoutOrder = 2
+farmModeAboveBtn.Size = UDim2_new(0, 130, 0, 28)
+farmModeAboveBtn.BackgroundColor3 = Color3_fromRGB(40, 40, 55)
+farmModeAboveBtn.Text = "Above"
+farmModeAboveBtn.Font = Enum.Font.GothamBold
+farmModeAboveBtn.TextSize = 11
+farmModeAboveBtn.TextColor3 = Color3_fromRGB(180, 180, 200)
+farmModeAboveBtn.BorderSizePixel = 0
+farmModeAboveBtn.AutoButtonColor = false
+farmModeAboveBtn.Parent = farmModeButtonsFrame
 
-local farmModeOptionsLayout = Instance.new("UIListLayout")
-farmModeOptionsLayout.Padding = UDim.new(0, 2)
-farmModeOptionsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-farmModeOptionsLayout.Parent = farmModeOptionsFrame
+local farmModeAboveCorner = Instance.new("UICorner")
+farmModeAboveCorner.CornerRadius = UDim.new(0, 6)
+farmModeAboveCorner.Parent = farmModeAboveBtn
 
--- Criar opções "Behind" e "Above"
-local farmPositionOptions = {"Behind", "Above"}
-
-for i, option in ipairs(farmPositionOptions) do
-	local optionBtn = Instance.new("TextButton")
-	optionBtn.Name = "Option_" .. option
-	optionBtn.LayoutOrder = i
-	optionBtn.Size = UDim2_new(1, 0, 0, 23)
-	optionBtn.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
-	optionBtn.Text = option
-	optionBtn.Font = Enum.Font.Gotham
-	optionBtn.TextSize = 10
-	optionBtn.TextColor3 = Color3_white
-	optionBtn.BorderSizePixel = 0
-	optionBtn.AutoButtonColor = false
-	optionBtn.Parent = farmModeOptionsFrame
-	
-	optionBtn.MouseEnter:Connect(function()
-		optionBtn.BackgroundColor3 = Color3_fromRGB(35, 35, 45)
-	end)
-	
-	optionBtn.MouseLeave:Connect(function()
-		optionBtn.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
-	end)
-	
-	optionBtn.MouseButton1Click:Connect(function()
-		farmModeDropdown.Text = option .. "  ▼"
-		farmModeOptionsFrame.Visible = false
-		farmModeContainer.Size = UDim2_new(1, 0, 0, 50)
-		state.autofarmMode = option
-	end)
+local function updateFarmPositionVisuals()
+	local isBehind = (state.autofarmMode == "Behind")
+	farmModeBehindBtn.BackgroundColor3 = isBehind and Color3_fromRGB(100, 180, 255) or Color3_fromRGB(40, 40, 55)
+	farmModeBehindBtn.TextColor3 = isBehind and Color3_white or Color3_fromRGB(180, 180, 200)
+	farmModeAboveBtn.BackgroundColor3 = isBehind and Color3_fromRGB(40, 40, 55) or Color3_fromRGB(100, 180, 255)
+	farmModeAboveBtn.TextColor3 = isBehind and Color3_fromRGB(180, 180, 200) or Color3_white
 end
 
-farmModeDropdown.MouseButton1Click:Connect(function()
-	farmModeOptionsFrame.Visible = not farmModeOptionsFrame.Visible
-	if farmModeOptionsFrame.Visible then
-		local optionsHeight = #farmPositionOptions * 25 + 4
-		farmModeContainer.Size = UDim2_new(1, 0, 0, 50 + math.min(optionsHeight, 60) + 5)
-	else
-		farmModeContainer.Size = UDim2_new(1, 0, 0, 50)
+farmModeBehindBtn.MouseButton1Click:Connect(function()
+	state.autofarmMode = "Behind"
+	updateFarmPositionVisuals()
+end)
+
+farmModeAboveBtn.MouseButton1Click:Connect(function()
+	state.autofarmMode = "Above"
+	updateFarmPositionVisuals()
+end)
+
+farmModeBehindBtn.MouseEnter:Connect(function()
+	if state.autofarmMode ~= "Behind" then
+		farmModeBehindBtn.BackgroundColor3 = Color3_fromRGB(55, 55, 70)
 	end
 end)
+farmModeBehindBtn.MouseLeave:Connect(function()
+	updateFarmPositionVisuals()
+end)
+farmModeAboveBtn.MouseEnter:Connect(function()
+	if state.autofarmMode ~= "Above" then
+		farmModeAboveBtn.BackgroundColor3 = Color3_fromRGB(55, 55, 70)
+	end
+end)
+farmModeAboveBtn.MouseLeave:Connect(function()
+	updateFarmPositionVisuals()
+end)
+
+updateFarmPositionVisuals()
 
 local lockOnContainer, lockOnToggle, lockOnBg, lockOnCircle = createToggle(
 	combatPage,
