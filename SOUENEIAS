@@ -608,16 +608,16 @@ local function autofarmLoop()
 		local dist = state.autofarmDistance
 		local abovePos = npcRoot.Position + Vector3_new(0, dist, 0)
 		
-		-- Criar um CFrame que olha diretamente para baixo
-		-- Para olhar para baixo, precisamos rotacionar 90° no eixo X
-		local rotationCFrame = CFrame.Angles(math.rad(90), 0, 0)
+		-- Criar um CFrame que olha diretamente para baixo (para frente = -Z)
+		-- Usar CFrame.fromOrientation para evitar problemas de rotação acumulativa
+		local lookVector = (npcRoot.Position - abovePos).Unit
+		local upVector = Vector3.new(0, -1, 0) -- Virado para baixo
+		local rightVector = lookVector:Cross(upVector)
 		
-		-- Opcional: alinhar com a direção do NPC no plano horizontal
-		local npcLook = npcRoot.CFrame.LookVector
-		local horizontalAngle = math.atan2(-npcLook.X, -npcLook.Z)
-		local horizontalRotation = CFrame.Angles(0, horizontalAngle, 0)
+		-- Recalcular upVector para ser ortogonal
+		upVector = rightVector:Cross(lookVector)
 		
-		targetCFrame = CFrame.new(abovePos) * rotationCFrame * horizontalRotation
+		targetCFrame = CFrame.fromMatrix(abovePos, rightVector, upVector, -lookVector)
 	else
 		-- Behind NPC: atrás do NPC (distância = state.autofarmDistance)
 		local npcCFrame = npcRoot.CFrame
