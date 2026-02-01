@@ -1109,11 +1109,14 @@ local function createDropdown(parent, labelText, options, defaultOption)
 	dropdownPadding.PaddingLeft = UDim.new(0, 8)
 	dropdownPadding.Parent = dropdown
 	
-	local optionsFrame = Instance.new("Frame")
-	optionsFrame.Size = UDim2_new(1, -20, 0, #options * 25)
+	local optionsFrame = Instance.new("ScrollingFrame")
+	optionsFrame.Name = "OptionsFrame"
+	optionsFrame.Size = UDim2_new(1, -20, 0, math.min(#options * 25, 100))
 	optionsFrame.Position = UDim2_new(0, 10, 0, 48)
 	optionsFrame.BackgroundColor3 = Color3_fromRGB(20, 20, 28)
 	optionsFrame.BorderSizePixel = 0
+	optionsFrame.ScrollBarThickness = 3
+	optionsFrame.ScrollBarImageColor3 = Color3_fromRGB(80, 80, 100)
 	optionsFrame.Visible = false
 	optionsFrame.ZIndex = 10
 	optionsFrame.Parent = container
@@ -1124,6 +1127,7 @@ local function createDropdown(parent, labelText, options, defaultOption)
 	
 	local optionsLayout = Instance.new("UIListLayout")
 	optionsLayout.Padding = UDim.new(0, 2)
+	optionsLayout.SortOrder = Enum.SortOrder.LayoutOrder
 	optionsLayout.Parent = optionsFrame
 	
 	for _, option in ipairs(options) do
@@ -1150,13 +1154,20 @@ local function createDropdown(parent, labelText, options, defaultOption)
 			dropdown.Text = option .. "  ▼"
 			optionsFrame.Visible = false
 			container.Size = UDim2_new(1, 0, 0, 50)
+			
+			-- Atualizar o estado
+			if labelText == "Farm Position" then
+				state.autofarmMode = option
+			end
 		end)
 	end
+	
+	optionsFrame.CanvasSize = UDim2.new(0, 0, 0, #options * 25)
 	
 	dropdown.MouseButton1Click:Connect(function()
 		optionsFrame.Visible = not optionsFrame.Visible
 		if optionsFrame.Visible then
-			container.Size = UDim2_new(1, 0, 0, 50 + (#options * 25) + 5)
+			container.Size = UDim2_new(1, 0, 0, 50 + math.min(#options * 25, 100) + 5)
 		else
 			container.Size = UDim2_new(1, 0, 0, 50)
 		end
@@ -1399,19 +1410,6 @@ end
 autofarmToggle.MouseButton1Click:Connect(function()
 	toggleUpdateFunctions.autofarm(not state.autofarmEnabled)
 end)
-
--- Farm Mode Dropdown Handler
-local farmModeOptionsFrame = farmModeContainer:FindFirstChild("Frame")
-if farmModeOptionsFrame then
-	for _, child in ipairs(farmModeOptionsFrame:GetChildren()) do
-		if child:IsA("TextButton") then
-			child.MouseButton1Click:Connect(function()
-				state.autofarmMode = child.Text
-				farmModeDropdown.Text = child.Text .. "  ▼"
-			end)
-		end
-	end
-end
 
 toggleUpdateFunctions.lockOn = function(enabled)
 	state.lockOnEnabled = enabled
