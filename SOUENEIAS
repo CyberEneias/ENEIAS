@@ -1,15 +1,13 @@
--- ===== CYBER HUB - FFRE EDITION V4.2 =====
+-- ===== CYBER HUB - FFRE EDITION V4.3 =====
 -- Ultra Smooth Teleport (Anti-Kick) + Lock On Target
 -- ESP + Tracers + Health Bars (Workspace.Alive)
--- Teleport (Workspace.LiveNPCS) + Auto-Save + Macros System
+-- Dual Autofarm Mode: Behind / Above NPC
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
 local TweenService = game:GetService("TweenService")
-local HttpService = game:GetService("HttpService")
-local TeleportService = game:GetService("TeleportService")
 
 local player = Players.LocalPlayer
 if not player then return end
@@ -18,6 +16,7 @@ if not player then return end
 local CONFIG = {
 	BACK_DISTANCE = 3.5,
 	HEIGHT_OFFSET = 2.5,
+	ABOVE_HEIGHT = 8,
 	MAX_DISTANCE = 60,
 	NPC_SCAN_INTERVAL = 0.3,
 	M1_CLICK_DELAY = 0.15,
@@ -26,98 +25,8 @@ local CONFIG = {
 	TELEPORT_SPEED = 150,
 	MAX_TELEPORT_DISTANCE = 500,
 	VISUAL_NPC_FOLDER = workspace:WaitForChild("Alive"),
-	TELEPORT_NPC_FOLDER = workspace:WaitForChild("LiveNPCS"),
-	AUTO_SAVE_INTERVAL = 30, -- Auto-save every 30 seconds
-	DEFAULT_MACROS = {
-		{name = "Farm Combo", keys = {"Q", "E", "R"}, delay = 0.5},
-		{name = "Heal Combo", keys = {"1", "2", "3"}, delay = 0.3},
-		{name = "Teleport Escape", keys = {"F", "Space"}, delay = 0.2}
-	}
+	TELEPORT_NPC_FOLDER = workspace:WaitForChild("LiveNPCS")
 }
-
--- ===== AUTO-SAVE SYSTEM =====
-local AutoSave = {
-	FileName = "CyberHub_Settings.json",
-	LastSave = 0,
-	Enabled = true
-}
-
-function AutoSave.saveSettings()
-	if not AutoSave.Enabled then return end
-	
-	local settings = {
-		version = "4.2",
-		timestamp = os.time(),
-		date = os.date("%Y-%m-%d %H:%M:%S"),
-		autofarmEnabled = state.autofarmEnabled,
-		infiniteJumpEnabled = state.infiniteJumpEnabled,
-		speedEnabled = state.speedEnabled,
-		m1MacroEnabled = state.m1MacroEnabled,
-		espEnabled = state.espEnabled,
-		tracersEnabled = state.tracersEnabled,
-		healthBarsEnabled = state.healthBarsEnabled,
-		lockOnEnabled = state.lockOnEnabled,
-		speedValue = state.speedValue,
-		m1ClickDelay = state.m1ClickDelay,
-		noClipEnabled = noClipEnabled,
-		flyEnabled = flyEnabled,
-		playerESPEnabled = playerESPEnabled,
-		fovEnabled = fovEnabled,
-		macros = state.macros,
-		guiPosition = state.guiPosition
-	}
-	
-	local success, encoded = pcall(function()
-		return HttpService:JSONEncode(settings)
-	end)
-	
-	if success then
-		pcall(function()
-			if writefile then
-				writefile(AutoSave.FileName, encoded)
-				AutoSave.LastSave = os.time()
-				print("💾 Settings auto-saved")
-			end
-		end)
-	end
-end
-
-function AutoSave.loadSettings()
-	pcall(function()
-		if readfile and isfile then
-			if isfile(AutoSave.FileName) then
-				local content = readfile(AutoSave.FileName)
-				local success, settings = pcall(function()
-					return HttpService:JSONDecode(content)
-				end)
-				
-				if success and settings then
-					-- Apply settings
-					state.autofarmEnabled = settings.autofarmEnabled or false
-					state.infiniteJumpEnabled = settings.infiniteJumpEnabled or false
-					state.speedEnabled = settings.speedEnabled or false
-					state.m1MacroEnabled = settings.m1MacroEnabled or false
-					state.espEnabled = settings.espEnabled or false
-					state.tracersEnabled = settings.tracersEnabled or false
-					state.healthBarsEnabled = settings.healthBarsEnabled or false
-					state.lockOnEnabled = settings.lockOnEnabled or false
-					state.speedValue = settings.speedValue or 160
-					state.m1ClickDelay = settings.m1ClickDelay or 0.15
-					noClipEnabled = settings.noClipEnabled or false
-					flyEnabled = settings.flyEnabled or false
-					playerESPEnabled = settings.playerESPEnabled or false
-					fovEnabled = settings.fovEnabled or false
-					state.macros = settings.macros or CONFIG.DEFAULT_MACROS
-					state.guiPosition = settings.guiPosition
-					
-					print("💾 Settings loaded from auto-save")
-					return true
-				end
-			end
-		end
-	end)
-	return false
-end
 
 -- ===== CACHE =====
 local Vector3_new = Vector3.new
@@ -131,6 +40,7 @@ local Color3_black = Color3.new(0,0,0)
 -- ===== STATE =====
 local state = {
 	autofarmEnabled = false,
+	autofarmMode = "Behind", -- "Behind" or "Above"
 	infiniteJumpEnabled = false,
 	speedEnabled = false,
 	m1MacroEnabled = false,
@@ -160,84 +70,16 @@ local state = {
 	tracerLines = {},
 	healthBarObjects = {},
 	isTeleporting = false,
-	teleportNPCList = {},
-	macros = CONFIG.DEFAULT_MACROS,
-	activeMacros = {},
-	guiPosition = nil
+	teleportNPCList = {}
 }
 
--- ===== MACRO SYSTEM =====
-local MacroSystem = {
-	runningMacros = {},
-	nextMacroId = 1
-}
-
-function MacroSystem.executeMacro(macro)
-	if not macro or not macro.keys or #macro.keys == 0 then return end
-	
-	local macroId = MacroSystem.nextMacroId
-	MacroSystem.nextMacroId = macroSystem.nextMacroId + 1
-	
-	state.activeMacros[macroId] = true
-	
-	task.spawn(function()
-		while state.activeMacros[macroId] do
-			for _, key in ipairs(macro.keys) do
-				if not state.activeMacros[macroId] then break end
-				
-				-- Simulate key press
-				local keyCode = Enum.KeyCode[key]
-				if keyCode then
-					VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
-					task.wait(0.05)
-					VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
-				end
-				
-				task.wait(macro.delay or 0.1)
-			end
-			
-			if macro.loop then
-				task.wait(macro.interval or 1)
-			else
-				state.activeMacros[macroId] = nil
-				break
-			end
-		end
-	end)
-	
-	return macroId
-end
-
-function MacroSystem.stopMacro(macroId)
-	state.activeMacros[macroId] = nil
-end
-
-function MacroSystem.stopAllMacros()
-	table.clear(state.activeMacros)
-end
-
-function MacroSystem.addMacro(name, keys, delay, loop, interval)
-	local newMacro = {
-		name = name,
-		keys = keys,
-		delay = delay or 0.1,
-		loop = loop or false,
-		interval = interval or 1
-	}
-	
-	table.insert(state.macros, newMacro)
-	AutoSave.saveSettings()
-	return newMacro
-end
-
-function MacroSystem.removeMacro(index)
-	if state.macros[index] then
-		table.remove(state.macros, index)
-		AutoSave.saveSettings()
-		return true
-	end
-	return false
-end
+-- Additional global states
+local noClipEnabled = false
+local flyEnabled = false
+local playerESPEnabled = false
+local fovEnabled = false
+local playerESPObjects = {}
+local fovCircle = nil
 
 -- ===== UTILS =====
 local function disconnectConnection(name)
@@ -272,7 +114,7 @@ local function invalidateCharCache()
 	state.charCache.lastUpdate = 0
 end
 
--- ===== NPC CACHE (PARA AUTOFARM/LOCKON) =====
+-- ===== NPC CACHE =====
 local function updateNPCCache()
 	table.clear(state.npcCache)
 	local root, _, _ = getCharComponents()
@@ -303,7 +145,7 @@ local function findClosestNPC()
 	return state.npcCache[1] and state.npcCache[1].model
 end
 
--- ===== ESP SYSTEM (WORLDSPACE.ALIVE) =====
+-- ===== ESP SYSTEM =====
 local function createESP(npc)
 	if state.espObjects[npc] then return end
 	
@@ -311,7 +153,7 @@ local function createESP(npc)
 	if not npcRoot then return end
 	
 	local highlight = Instance.new("Highlight")
-	highlight.Name = "CyberHubHighlight"
+	highlight.Name = "CyberHighlight"
 	highlight.Adornee = npc
 	highlight.FillColor = Color3_fromRGB(255, 0, 0)
 	highlight.OutlineColor = Color3_fromRGB(255, 255, 255)
@@ -336,7 +178,7 @@ local function clearAllESP()
 	table.clear(state.espObjects)
 end
 
--- ===== TRACERS SYSTEM (WORLDSPACE.ALIVE) =====
+-- ===== TRACERS SYSTEM =====
 local function createTracer(npc)
 	if state.tracerLines[npc] then return end
 	
@@ -394,7 +236,7 @@ local function clearAllTracers()
 	table.clear(state.tracerLines)
 end
 
--- ===== HEALTH BAR SYSTEM (WORLDSPACE.ALIVE) =====
+-- ===== HEALTH BAR SYSTEM =====
 local function createHealthBar(npc)
 	if state.healthBarObjects[npc] then return end
 	
@@ -403,7 +245,7 @@ local function createHealthBar(npc)
 	if not npcRoot or not npcHum then return end
 	
 	local billboardGui = Instance.new("BillboardGui")
-	billboardGui.Name = "CyberHubHealthBar"
+	billboardGui.Name = "CyberHealthBar"
 	billboardGui.Adornee = npcRoot
 	billboardGui.Size = UDim2_new(4, 0, 0.5, 0)
 	billboardGui.StudsOffset = Vector3_new(0, 3, 0)
@@ -483,7 +325,7 @@ local function clearAllHealthBars()
 	table.clear(state.healthBarObjects)
 end
 
--- ===== VISUAL FEATURES UPDATE (WORLDSPACE.ALIVE) =====
+-- ===== VISUAL FEATURES UPDATE =====
 local function updateVisuals()
 	for _, npc in ipairs(CONFIG.VISUAL_NPC_FOLDER:GetChildren()) do
 		if npc:IsA("Model") and npc ~= player.Character then
@@ -520,7 +362,68 @@ local function updateVisuals()
 	updateTracers()
 end
 
--- ===== ULTRA SMOOTH TELEPORT (ANTI-KICK) - WORKS IN WORKSPACE.LIVENPCS =====
+-- ===== PLAYER ESP =====
+local function updatePlayerESP()
+	if not playerESPEnabled then
+		for player, esp in pairs(playerESPObjects) do
+			if esp then esp:Destroy() end
+		end
+		table.clear(playerESPObjects)
+		return
+	end
+	
+	for _, otherPlayer in ipairs(Players:GetPlayers()) do
+		if otherPlayer ~= player and otherPlayer.Character then
+			local char = otherPlayer.Character
+			
+			if not playerESPObjects[otherPlayer] then
+				local highlight = Instance.new("Highlight")
+				highlight.Name = "PlayerHighlight"
+				highlight.Adornee = char
+				highlight.FillColor = Color3_fromRGB(0, 255, 255)
+				highlight.OutlineColor = Color3_fromRGB(255, 255, 255)
+				highlight.FillTransparency = 0.7
+				highlight.OutlineTransparency = 0
+				highlight.Parent = char
+				
+				playerESPObjects[otherPlayer] = highlight
+			end
+		end
+	end
+end
+
+-- ===== FOV CIRCLE =====
+local function createFOVCircle()
+	if fovCircle then return end
+	
+	fovCircle = Drawing.new("Circle")
+	fovCircle.Visible = true
+	fovCircle.Thickness = 2
+	fovCircle.Color = Color3.new(1, 1, 1)
+	fovCircle.Transparency = 0.7
+	fovCircle.NumSides = 60
+	fovCircle.Radius = 150
+	fovCircle.Filled = false
+end
+
+local function updateFOVCircle()
+	if not fovEnabled or not fovCircle then return end
+	
+	local camera = workspace.CurrentCamera
+	local screenSize = camera.ViewportSize
+	
+	fovCircle.Position = Vector2.new(screenSize.X / 2, screenSize.Y / 2)
+	fovCircle.Visible = true
+end
+
+local function removeFOVCircle()
+	if fovCircle then
+		fovCircle:Remove()
+		fovCircle = nil
+	end
+end
+
+-- ===== ULTRA SMOOTH TELEPORT =====
 local function ultraSmoothTeleport(targetPosition)
 	if state.isTeleporting then
 		return false
@@ -534,17 +437,14 @@ local function ultraSmoothTeleport(targetPosition)
 	local startPos = root.Position
 	local distance = (targetPosition - startPos).Magnitude
 	
-	-- If very close, just teleport
 	if distance < 10 then
 		root.CFrame = CFrame_new(targetPosition)
 		state.isTeleporting = false
 		return true
 	end
 	
-	-- Calculate travel time based on distance
 	local travelTime = distance / CONFIG.TELEPORT_SPEED
 	
-	-- If distance is huge, break into chunks
 	if distance > CONFIG.MAX_TELEPORT_DISTANCE then
 		local direction = (targetPosition - startPos).Unit
 		local numChunks = math.ceil(distance / CONFIG.MAX_TELEPORT_DISTANCE)
@@ -572,10 +472,9 @@ local function ultraSmoothTeleport(targetPosition)
 			tween:Play()
 			tween.Completed:Wait()
 			
-			task.wait(0.1) -- Small delay between chunks
+			task.wait(0.1)
 		end
 	else
-		-- Single smooth tween
 		local tweenInfo = TweenInfo.new(
 			travelTime,
 			Enum.EasingStyle.Linear,
@@ -591,12 +490,10 @@ local function ultraSmoothTeleport(targetPosition)
 	return true
 end
 
--- ===== TELEPORT FUNCTIONS (WORKS IN WORKSPACE.LIVENPCS) =====
 local function safeTeleportToNPC(npcName)
 	local root, _, _ = getCharComponents()
 	if not root then return false, "Character not found" end
 	
-	-- Procura na pasta LiveNPCS
 	for _, npc in ipairs(CONFIG.TELEPORT_NPC_FOLDER:GetChildren()) do
 		if npc.Name == npcName and npc:IsA("Model") then
 			local npcRoot = npc:FindFirstChild("HumanoidRootPart")
@@ -612,10 +509,10 @@ local function safeTeleportToNPC(npcName)
 		end
 	end
 	
-	return false, "NPC not found in LiveNPCS"
+	return false, "NPC not found"
 end
 
-local function getTeleportNPCList()
+local function getNPCList()
 	local npcList = {}
 	for _, npc in ipairs(CONFIG.TELEPORT_NPC_FOLDER:GetChildren()) do
 		if npc:IsA("Model") and npc:FindFirstChild("HumanoidRootPart") then
@@ -625,7 +522,6 @@ local function getTeleportNPCList()
 		end
 	end
 	table.sort(npcList)
-	state.teleportNPCList = npcList
 	return npcList
 end
 
@@ -636,12 +532,10 @@ local function lockOnLoop()
 	local camera = workspace.CurrentCamera
 	local target = state.lockedTarget
 	
-	-- If autofarm is active, use autofarm target
 	if state.autofarmEnabled and state.lockedNPC then
 		target = state.lockedNPC
 	end
 	
-	-- Otherwise find closest NPC
 	if not target or not target.Parent then
 		target = findClosestNPC()
 		state.lockedTarget = target
@@ -672,7 +566,7 @@ local function m1MacroLoop()
 	end
 end
 
--- ===== AUTOFARM =====
+-- ===== AUTOFARM (DUAL MODE) =====
 local function isNPCValid(npc)
 	if not npc or not npc.Parent then return false end
 	local hum = npc:FindFirstChild("Humanoid")
@@ -704,10 +598,19 @@ local function autofarmLoop()
 		return
 	end
 
-	local npcCFrame = npcRoot.CFrame
-	local backVector = -npcCFrame.LookVector * CONFIG.BACK_DISTANCE
-	local upVector = Vector3_new(0, CONFIG.HEIGHT_OFFSET, 0)
-	local targetCFrame = CFrame_new(npcRoot.Position + backVector + upVector)
+	local targetCFrame
+	
+	if state.autofarmMode == "Behind" then
+		-- Behind NPC (original position)
+		local npcCFrame = npcRoot.CFrame
+		local backVector = -npcCFrame.LookVector * CONFIG.BACK_DISTANCE
+		local upVector = Vector3_new(0, CONFIG.HEIGHT_OFFSET, 0)
+		targetCFrame = CFrame_new(npcRoot.Position + backVector + upVector)
+	else
+		-- Above NPC (new position from images)
+		local aboveVector = Vector3_new(0, CONFIG.ABOVE_HEIGHT, 0)
+		targetCFrame = CFrame_new(npcRoot.Position + aboveVector)
+	end
 
 	root.AssemblyLinearVelocity = Vector3_zero
 	root.AssemblyAngularVelocity = Vector3_zero
@@ -728,106 +631,66 @@ local function speedLoop()
 end
 
 -- ===== NO CLIP =====
-local noClipEnabled = false
 local function enableNoClip()
 	local char = player.Character
-	if char then
-		for _, part in ipairs(char:GetDescendants()) do
-			if part:IsA("BasePart") then
-				part.CanCollide = false
-			end
+	if not char then return end
+	
+	for _, part in ipairs(char:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.CanCollide = false
 		end
 	end
 end
 
 local function disableNoClip()
 	local char = player.Character
-	if char then
-		for _, part in ipairs(char:GetDescendants()) do
-			if part:IsA("BasePart") then
-				part.CanCollide = true
-			end
-		end
-	end
-end
-
--- ===== PLAYER ESP =====
-local playerESPEnabled = false
-local playerESPObjects = {}
-
-local function createPlayerESP(targetPlayer)
-	if playerESPObjects[targetPlayer] then return end
-	
-	local char = targetPlayer.Character
 	if not char then return end
 	
-	local highlight = Instance.new("Highlight")
-	highlight.Name = "CyberHubPlayerESP"
-	highlight.Adornee = char
-	highlight.FillColor = Color3_fromRGB(0, 120, 255)
-	highlight.OutlineColor = Color3_fromRGB(255, 255, 255)
-	highlight.FillTransparency = 0.6
-	highlight.OutlineTransparency = 0
-	highlight.Parent = char
-	
-	playerESPObjects[targetPlayer] = highlight
-end
-
-local function removePlayerESP(targetPlayer)
-	if playerESPObjects[targetPlayer] then
-		playerESPObjects[targetPlayer]:Destroy()
-		playerESPObjects[targetPlayer] = nil
-	end
-end
-
-local function updatePlayerESP()
-	if not playerESPEnabled then
-		for player, esp in pairs(playerESPObjects) do
-			if esp then esp:Destroy() end
-		end
-		table.clear(playerESPObjects)
-		return
-	end
-	
-	for _, targetPlayer in ipairs(Players:GetPlayers()) do
-		if targetPlayer ~= player then
-			if targetPlayer.Character then
-				createPlayerESP(targetPlayer)
-			end
+	for _, part in ipairs(char:GetDescendants()) do
+		if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+			part.CanCollide = true
 		end
 	end
 end
 
--- ===== FOV CIRCLE =====
-local fovEnabled = false
-local fovCircle = nil
+-- ===== FLY =====
+local flySpeed = 50
+local flyConnection = nil
 
-local function createFOVCircle()
-	if fovCircle then return end
+local function enableFly()
+	local root, hum, char = getCharComponents()
+	if not root or not hum then return end
 	
-	fovCircle = Drawing.new("Circle")
-	fovCircle.Visible = true
-	fovCircle.Color = Color3.new(1, 1, 1)
-	fovCircle.Thickness = 2
-	fovCircle.Transparency = 0.5
-	fovCircle.Filled = false
-	fovCircle.Radius = 100
-end
-
-local function updateFOVCircle()
-	if not fovEnabled or not fovCircle then return end
+	local bodyVelocity = Instance.new("BodyVelocity")
+	bodyVelocity.MaxForce = Vector3_new(math.huge, math.huge, math.huge)
+	bodyVelocity.Velocity = Vector3_zero
+	bodyVelocity.Parent = root
 	
-	local camera = workspace.CurrentCamera
-	local screenSize = camera.ViewportSize
-	fovCircle.Position = Vector2.new(screenSize.X / 2, screenSize.Y / 2)
-	fovCircle.Visible = true
-end
-
-local function removeFOVCircle()
-	if fovCircle then
-		fovCircle:Remove()
-		fovCircle = nil
-	end
+	local bodyGyro = Instance.new("BodyGyro")
+	bodyGyro.MaxTorque = Vector3_new(math.huge, math.huge, math.huge)
+	bodyGyro.P = 9000
+	bodyGyro.CFrame = root.CFrame
+	bodyGyro.Parent = root
+	
+	flyConnection = RunService.Heartbeat:Connect(function()
+		if not flyEnabled then
+			if bodyVelocity then bodyVelocity:Destroy() end
+			if bodyGyro then bodyGyro:Destroy() end
+			if flyConnection then flyConnection:Disconnect() end
+			return
+		end
+		
+		local camera = workspace.CurrentCamera
+		local moveDir = hum.MoveDirection
+		
+		if moveDir.Magnitude > 0 then
+			bodyVelocity.Velocity = camera.CFrame.LookVector * flySpeed
+		else
+			bodyVelocity.Velocity = Vector3_zero
+		end
+		
+		bodyGyro.CFrame = camera.CFrame
+	end)
 end
 
 -- ===== CLEANUP OLD GUI =====
@@ -842,38 +705,29 @@ screenGui.ResetOnSpawn = false
 screenGui.IgnoreGuiInset = true
 screenGui.Parent = CoreGui
 
--- Main Frame
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2_new(0, 350, 0, 550) -- Increased size for macros
-mainFrame.Position = UDim2_new(0, 20, 0.5, -275)
+mainFrame.Size = UDim2_new(0, 320, 0, 450)
+mainFrame.Position = UDim2_new(0, 20, 0.5, -225)
 mainFrame.BackgroundColor3 = Color3_fromRGB(13, 13, 18)
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
 mainFrame.Draggable = true
 mainFrame.Parent = screenGui
 
--- Save GUI position when moved
-mainFrame:GetPropertyChangedSignal("Position"):Connect(function()
-	state.guiPosition = {mainFrame.Position.X.Scale, mainFrame.Position.X.Offset, 
-						mainFrame.Position.Y.Scale, mainFrame.Position.Y.Offset}
-end)
-
 local mainCorner = Instance.new("UICorner")
 mainCorner.CornerRadius = UDim.new(0, 8)
 mainCorner.Parent = mainFrame
 
--- Border Gradient
 local borderGradient = Instance.new("UIStroke")
-borderGradient.Color = Color3_fromRGB(100, 180, 255)
-borderGradient.Thickness = 2
-borderGradient.Transparency = 0.3
+borderGradient.Color = Color3_fromRGB(100, 100, 120)
+borderGradient.Thickness = 1
+borderGradient.Transparency = 0.5
 borderGradient.Parent = mainFrame
 
--- Header
 local header = Instance.new("Frame")
 header.Name = "Header"
-header.Size = UDim2_new(1, 0, 0, 40)
+header.Size = UDim2_new(1, 0, 0, 35)
 header.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
 header.BorderSizePixel = 0
 header.Parent = mainFrame
@@ -889,7 +743,6 @@ headerFill.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
 headerFill.BorderSizePixel = 0
 headerFill.Parent = header
 
--- Title with Icon
 local titleContainer = Instance.new("Frame")
 titleContainer.Size = UDim2_new(1, -80, 1, 0)
 titleContainer.Position = UDim2_new(0, 10, 0, 0)
@@ -899,9 +752,9 @@ titleContainer.Parent = header
 local titleIcon = Instance.new("TextLabel")
 titleIcon.Size = UDim2_new(0, 20, 1, 0)
 titleIcon.BackgroundTransparency = 1
-titleIcon.Text = "⚡"
+titleIcon.Text = "✦"
 titleIcon.Font = Enum.Font.GothamBold
-titleIcon.TextSize = 18
+titleIcon.TextSize = 16
 titleIcon.TextColor3 = Color3_fromRGB(100, 180, 255)
 titleIcon.TextXAlignment = Enum.TextXAlignment.Left
 titleIcon.Parent = titleContainer
@@ -912,7 +765,7 @@ titleLabel.Position = UDim2_new(0, 25, 0, 0)
 titleLabel.BackgroundTransparency = 1
 titleLabel.Text = "CYBER HUB"
 titleLabel.Font = Enum.Font.GothamBold
-titleLabel.TextSize = 14
+titleLabel.TextSize = 13
 titleLabel.TextColor3 = Color3_white
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 titleLabel.Parent = titleContainer
@@ -921,17 +774,16 @@ local versionLabel = Instance.new("TextLabel")
 versionLabel.Size = UDim2_new(0, 80, 1, 0)
 versionLabel.Position = UDim2_new(1, -90, 0, 0)
 versionLabel.BackgroundTransparency = 1
-versionLabel.Text = "V4.2" 
+versionLabel.Text = "4.3"
 versionLabel.Font = Enum.Font.Gotham
 versionLabel.TextSize = 11
 versionLabel.TextColor3 = Color3_fromRGB(120, 120, 140)
 versionLabel.TextXAlignment = Enum.TextXAlignment.Right
 versionLabel.Parent = header
 
--- Close/Minimize Buttons
 local closeBtn = Instance.new("TextButton")
 closeBtn.Size = UDim2_new(0, 25, 0, 25)
-closeBtn.Position = UDim2_new(1, -30, 0, 7)
+closeBtn.Position = UDim2_new(1, -30, 0, 5)
 closeBtn.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
 closeBtn.Text = "×"
 closeBtn.Font = Enum.Font.GothamBold
@@ -948,11 +800,10 @@ closeBtn.MouseButton1Click:Connect(function()
 	screenGui:Destroy()
 end)
 
--- Sidebar
 local sidebar = Instance.new("Frame")
 sidebar.Name = "Sidebar"
-sidebar.Size = UDim2_new(0, 50, 1, -45)
-sidebar.Position = UDim2_new(0, 5, 0, 43)
+sidebar.Size = UDim2_new(0, 45, 1, -40)
+sidebar.Position = UDim2_new(0, 5, 0, 38)
 sidebar.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
 sidebar.BorderSizePixel = 0
 sidebar.Parent = mainFrame
@@ -970,15 +821,14 @@ local sidebarPadding = Instance.new("UIPadding")
 sidebarPadding.PaddingTop = UDim.new(0, 8)
 sidebarPadding.Parent = sidebar
 
--- Helper: Create Sidebar Button
-local function createSidebarBtn(icon, name, tooltip)
+local function createSidebarBtn(icon, name)
 	local btn = Instance.new("TextButton")
 	btn.Name = name
-	btn.Size = UDim2_new(0, 40, 0, 40)
+	btn.Size = UDim2_new(0, 35, 0, 35)
 	btn.BackgroundColor3 = Color3_fromRGB(22, 22, 30)
 	btn.Text = icon
 	btn.Font = Enum.Font.GothamBold
-	btn.TextSize = 18
+	btn.TextSize = 16
 	btn.TextColor3 = Color3_fromRGB(120, 120, 140)
 	btn.BorderSizePixel = 0
 	btn.AutoButtonColor = false
@@ -991,21 +841,18 @@ local function createSidebarBtn(icon, name, tooltip)
 	return btn
 end
 
-local combatBtn = createSidebarBtn("⚔", "CombatBtn", "Combat Features")
-local movementBtn = createSidebarBtn("🚀", "MovementBtn", "Movement Features")
-local visualBtn = createSidebarBtn("👁", "VisualBtn", "Visual Features")
-local teleportBtn = createSidebarBtn("📍", "TeleportBtn", "Teleport System")
-local macrosBtn = createSidebarBtn("🎮", "MacrosBtn", "Macros System")
+local combatBtn = createSidebarBtn("⚔", "CombatBtn")
+local visualBtn = createSidebarBtn("👁", "VisualBtn")
+local teleportBtn = createSidebarBtn("📍", "TeleportBtn")
+local miscBtn = createSidebarBtn("🔧", "MiscBtn")
 
--- Content Area
 local contentArea = Instance.new("Frame")
 contentArea.Name = "ContentArea"
-contentArea.Size = UDim2_new(1, -65, 1, -45)
-contentArea.Position = UDim2_new(0, 60, 0, 43)
+contentArea.Size = UDim2_new(1, -60, 1, -40)
+contentArea.Position = UDim2_new(0, 55, 0, 38)
 contentArea.BackgroundTransparency = 1
 contentArea.Parent = mainFrame
 
--- Helper: Create Page
 local function createPage(name)
 	local page = Instance.new("ScrollingFrame")
 	page.Name = name
@@ -1032,29 +879,24 @@ local function createPage(name)
 end
 
 local combatPage = createPage("CombatPage")
-local movementPage = createPage("MovementPage")
 local visualPage = createPage("VisualPage")
 local teleportPage = createPage("TeleportPage")
-local macrosPage = createPage("MacrosPage")
+local miscPage = createPage("MiscPage")
 
--- Page Switching
 local function switchPage(page, btn)
 	combatPage.Visible = false
-	movementPage.Visible = false
 	visualPage.Visible = false
 	teleportPage.Visible = false
-	macrosPage.Visible = false
+	miscPage.Visible = false
 	
 	combatBtn.BackgroundColor3 = Color3_fromRGB(22, 22, 30)
 	combatBtn.TextColor3 = Color3_fromRGB(120, 120, 140)
-	movementBtn.BackgroundColor3 = Color3_fromRGB(22, 22, 30)
-	movementBtn.TextColor3 = Color3_fromRGB(120, 120, 140)
 	visualBtn.BackgroundColor3 = Color3_fromRGB(22, 22, 30)
 	visualBtn.TextColor3 = Color3_fromRGB(120, 120, 140)
 	teleportBtn.BackgroundColor3 = Color3_fromRGB(22, 22, 30)
 	teleportBtn.TextColor3 = Color3_fromRGB(120, 120, 140)
-	macrosBtn.BackgroundColor3 = Color3_fromRGB(22, 22, 30)
-	macrosBtn.TextColor3 = Color3_fromRGB(120, 120, 140)
+	miscBtn.BackgroundColor3 = Color3_fromRGB(22, 22, 30)
+	miscBtn.TextColor3 = Color3_fromRGB(120, 120, 140)
 	
 	page.Visible = true
 	btn.BackgroundColor3 = Color3_fromRGB(100, 180, 255)
@@ -1065,10 +907,6 @@ combatBtn.MouseButton1Click:Connect(function()
 	switchPage(combatPage, combatBtn)
 end)
 
-movementBtn.MouseButton1Click:Connect(function()
-	switchPage(movementPage, movementBtn)
-end)
-
 visualBtn.MouseButton1Click:Connect(function()
 	switchPage(visualPage, visualBtn)
 end)
@@ -1077,14 +915,12 @@ teleportBtn.MouseButton1Click:Connect(function()
 	switchPage(teleportPage, teleportBtn)
 end)
 
-macrosBtn.MouseButton1Click:Connect(function()
-	switchPage(macrosPage, macrosBtn)
+miscBtn.MouseButton1Click:Connect(function()
+	switchPage(miscPage, miscBtn)
 end)
 
--- Initialize
 switchPage(combatPage, combatBtn)
 
--- Helper: Create Section Header
 local function createSectionHeader(parent, text)
 	local header = Instance.new("Frame")
 	header.Size = UDim2_new(1, 0, 0, 30)
@@ -1120,7 +956,6 @@ local function createSectionHeader(parent, text)
 	return header
 end
 
--- Helper: Create Toggle
 local function createToggle(parent, labelText, descText, defaultState)
 	local container = Instance.new("Frame")
 	container.Size = UDim2_new(1, 0, 0, descText and 55 or 40)
@@ -1157,7 +992,6 @@ local function createToggle(parent, labelText, descText, defaultState)
 		desc.Parent = container
 	end
 	
-	-- Toggle Button (Cyber Hub Style)
 	local toggleBg = Instance.new("Frame")
 	toggleBg.Size = UDim2_new(0, 38, 0, 20)
 	toggleBg.Position = UDim2_new(1, -45, 0, descText and 10 or 10)
@@ -1189,7 +1023,6 @@ local function createToggle(parent, labelText, descText, defaultState)
 	return container, toggleBtn, toggleBg, toggleCircle
 end
 
--- Helper: Create Slider
 local function createSlider(parent, labelText, minVal, maxVal, defaultVal)
 	local container = Instance.new("Frame")
 	container.Size = UDim2_new(1, 0, 0, 50)
@@ -1223,7 +1056,6 @@ local function createSlider(parent, labelText, minVal, maxVal, defaultVal)
 	valueLabel.TextXAlignment = Enum.TextXAlignment.Right
 	valueLabel.Parent = container
 	
-	-- Slider
 	local sliderBg = Instance.new("Frame")
 	sliderBg.Size = UDim2_new(1, -20, 0, 4)
 	sliderBg.Position = UDim2_new(0, 10, 1, -15)
@@ -1255,7 +1087,6 @@ local function createSlider(parent, labelText, minVal, maxVal, defaultVal)
 	return container, sliderBtn, sliderFill, valueLabel, minVal, maxVal
 end
 
--- Helper: Create Button
 local function createButton(parent, text, color)
 	local btn = Instance.new("TextButton")
 	btn.Size = UDim2_new(1, 0, 0, 35)
@@ -1275,40 +1106,118 @@ local function createButton(parent, text, color)
 	return btn
 end
 
--- Helper: Create Input Field
-local function createInput(parent, placeholder)
-	local input = Instance.new("TextBox")
-	input.Size = UDim2_new(1, 0, 0, 35)
-	input.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
-	input.PlaceholderText = placeholder
-	input.Text = ""
-	input.Font = Enum.Font.Gotham
-	input.TextSize = 12
-	input.TextColor3 = Color3_white
-	input.BorderSizePixel = 0
-	input.ClearTextOnFocus = false
-	input.Parent = parent
+local function createDropdown(parent, labelText, options, defaultOption)
+	local container = Instance.new("Frame")
+	container.Size = UDim2_new(1, 0, 0, 50)
+	container.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
+	container.BorderSizePixel = 0
+	container.Parent = parent
 	
-	local inputCorner = Instance.new("UICorner")
-	inputCorner.CornerRadius = UDim.new(0, 6)
-	inputCorner.Parent = input
+	local containerCorner = Instance.new("UICorner")
+	containerCorner.CornerRadius = UDim.new(0, 6)
+	containerCorner.Parent = container
 	
-	local inputPadding = Instance.new("UIPadding")
-	inputPadding.PaddingLeft = UDim.new(0, 10)
-	inputPadding.PaddingRight = UDim.new(0, 10)
-	inputPadding.Parent = input
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2_new(1, -20, 0, 18)
+	label.Position = UDim2_new(0, 10, 0, 6)
+	label.BackgroundTransparency = 1
+	label.Text = labelText
+	label.Font = Enum.Font.GothamBold
+	label.TextSize = 11
+	label.TextColor3 = Color3_fromRGB(180, 180, 200)
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = container
 	
-	return input
+	local dropdown = Instance.new("TextButton")
+	dropdown.Size = UDim2_new(1, -20, 0, 22)
+	dropdown.Position = UDim2_new(0, 10, 0, 24)
+	dropdown.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
+	dropdown.Text = defaultOption .. "  ▼"
+	dropdown.Font = Enum.Font.Gotham
+	dropdown.TextSize = 11
+	dropdown.TextColor3 = Color3_white
+	dropdown.BorderSizePixel = 0
+	dropdown.Parent = container
+	
+	local dropdownCorner = Instance.new("UICorner")
+	dropdownCorner.CornerRadius = UDim.new(0, 4)
+	dropdownCorner.Parent = dropdown
+	
+	local dropdownPadding = Instance.new("UIPadding")
+	dropdownPadding.PaddingLeft = UDim.new(0, 8)
+	dropdownPadding.Parent = dropdown
+	
+	local optionsFrame = Instance.new("Frame")
+	optionsFrame.Size = UDim2_new(1, -20, 0, #options * 25)
+	optionsFrame.Position = UDim2_new(0, 10, 0, 48)
+	optionsFrame.BackgroundColor3 = Color3_fromRGB(20, 20, 28)
+	optionsFrame.BorderSizePixel = 0
+	optionsFrame.Visible = false
+	optionsFrame.ZIndex = 10
+	optionsFrame.Parent = container
+	
+	local optionsCorner = Instance.new("UICorner")
+	optionsCorner.CornerRadius = UDim.new(0, 4)
+	optionsCorner.Parent = optionsFrame
+	
+	local optionsLayout = Instance.new("UIListLayout")
+	optionsLayout.Padding = UDim.new(0, 2)
+	optionsLayout.Parent = optionsFrame
+	
+	for _, option in ipairs(options) do
+		local optionBtn = Instance.new("TextButton")
+		optionBtn.Size = UDim2_new(1, 0, 0, 23)
+		optionBtn.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
+		optionBtn.Text = option
+		optionBtn.Font = Enum.Font.Gotham
+		optionBtn.TextSize = 10
+		optionBtn.TextColor3 = Color3_white
+		optionBtn.BorderSizePixel = 0
+		optionBtn.AutoButtonColor = false
+		optionBtn.Parent = optionsFrame
+		
+		optionBtn.MouseEnter:Connect(function()
+			optionBtn.BackgroundColor3 = Color3_fromRGB(35, 35, 45)
+		end)
+		
+		optionBtn.MouseLeave:Connect(function()
+			optionBtn.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
+		end)
+		
+		optionBtn.MouseButton1Click:Connect(function()
+			dropdown.Text = option .. "  ▼"
+			optionsFrame.Visible = false
+			container.Size = UDim2_new(1, 0, 0, 50)
+		end)
+	end
+	
+	dropdown.MouseButton1Click:Connect(function()
+		optionsFrame.Visible = not optionsFrame.Visible
+		if optionsFrame.Visible then
+			container.Size = UDim2_new(1, 0, 0, 50 + (#options * 25) + 5)
+		else
+			container.Size = UDim2_new(1, 0, 0, 50)
+		end
+	end)
+	
+	return container, dropdown
 end
 
 -- ===== COMBAT PAGE =====
-createSectionHeader(combatPage, "Combat Settings")
+createSectionHeader(combatPage, "Auto Farm Settings")
 
 local autofarmContainer, autofarmToggle, autofarmBg, autofarmCircle = createToggle(
-	combatPage, 
-	"Auto Farm", 
-	"Automatically farm the closest NPC in Workspace.Alive",
+	combatPage,
+	"Auto Farm",
+	"Automatically farm the closest NPC",
 	state.autofarmEnabled
+)
+
+local farmModeContainer, farmModeDropdown = createDropdown(
+	combatPage,
+	"Farm Position",
+	{"Behind", "Above"},
+	state.autofarmMode
 )
 
 local lockOnContainer, lockOnToggle, lockOnBg, lockOnCircle = createToggle(
@@ -1333,18 +1242,17 @@ local m1SliderContainer, m1SliderBtn, m1SliderFill, m1ValueLabel, m1Min, m1Max =
 	state.m1ClickDelay
 )
 
--- ===== MOVEMENT PAGE =====
-createSectionHeader(movementPage, "Movement Settings")
+createSectionHeader(combatPage, "Movement Settings")
 
 local speedContainer, speedToggle, speedBg, speedCircle = createToggle(
-	movementPage,
+	combatPage,
 	"Speed Boost",
 	"Increase movement speed",
 	state.speedEnabled
 )
 
 local speedSliderContainer, speedSliderBtn, speedSliderFill, speedValueLabel, speedMin, speedMax = createSlider(
-	movementPage,
+	combatPage,
 	"Speed Value",
 	50,
 	300,
@@ -1352,21 +1260,14 @@ local speedSliderContainer, speedSliderBtn, speedSliderFill, speedValueLabel, sp
 )
 
 local jumpContainer, jumpToggle, jumpBg, jumpCircle = createToggle(
-	movementPage,
+	combatPage,
 	"Infinite Jump",
 	"Jump infinitely without limit",
 	state.infiniteJumpEnabled
 )
 
-local noClipContainer, noClipToggle, noClipBg, noClipCircle = createToggle(
-	movementPage,
-	"No Clip",
-	"Walk through walls",
-	noClipEnabled
-)
-
 -- ===== VISUAL PAGE =====
-createSectionHeader(visualPage, "Visual Features (Workspace.Alive)")
+createSectionHeader(visualPage, "NPC Visual Features")
 
 local espContainer, espToggle, espBg, espCircle = createToggle(
 	visualPage,
@@ -1389,6 +1290,8 @@ local healthBarsContainer, healthBarsToggle, healthBarsBg, healthBarsCircle = cr
 	state.healthBarsEnabled
 )
 
+createSectionHeader(visualPage, "Player Visual Features")
+
 local playerESPContainer, playerESPToggle, playerESPBg, playerESPCircle = createToggle(
 	visualPage,
 	"Player ESP",
@@ -1399,15 +1302,15 @@ local playerESPContainer, playerESPToggle, playerESPBg, playerESPCircle = create
 local fovContainer, fovToggle, fovBg, fovCircle = createToggle(
 	visualPage,
 	"FOV Circle",
-	"Show aim field of view",
+	"Display field of view circle",
 	fovEnabled
 )
 
 -- ===== TELEPORT PAGE =====
-createSectionHeader(teleportPage, "Safe Teleport System (Workspace.LiveNPCS)")
+createSectionHeader(teleportPage, "Safe Teleport System")
 
 local tpInfoContainer = Instance.new("Frame")
-tpInfoContainer.Size = UDim2_new(1, 0, 0, 80)
+tpInfoContainer.Size = UDim2_new(1, 0, 0, 60)
 tpInfoContainer.BackgroundColor3 = Color3_fromRGB(100, 180, 255)
 tpInfoContainer.BackgroundTransparency = 0.9
 tpInfoContainer.BorderSizePixel = 0
@@ -1421,7 +1324,7 @@ local tpInfoLabel = Instance.new("TextLabel")
 tpInfoLabel.Size = UDim2_new(1, -20, 1, 0)
 tpInfoLabel.Position = UDim2_new(0, 10, 0, 0)
 tpInfoLabel.BackgroundTransparency = 1
-tpInfoLabel.Text = "📍 Ultra Smooth Teleport\n📁 Works in: Workspace.LiveNPCS\n🛡️ Anti-kick protection\n📌 Click any NPC to teleport"
+tpInfoLabel.Text = "📍 Ultra Smooth Teleport\nAnti-kick protection for long distances\nClick any NPC to teleport safely"
 tpInfoLabel.Font = Enum.Font.Gotham
 tpInfoLabel.TextSize = 10
 tpInfoLabel.TextColor3 = Color3_white
@@ -1430,8 +1333,6 @@ tpInfoLabel.TextWrapped = true
 tpInfoLabel.Parent = tpInfoContainer
 
 local refreshNPCBtn = createButton(teleportPage, "🔄 Refresh NPC List", Color3_fromRGB(80, 200, 120))
-local teleportToSpawnBtn = createButton(teleportPage, "🏠 Teleport to Spawn", Color3_fromRGB(155, 89, 182))
-local teleportToRandomBtn = createButton(teleportPage, "🎲 Teleport to Random NPC", Color3_fromRGB(241, 196, 15))
 
 local npcListContainer = Instance.new("Frame")
 npcListContainer.Name = "NPCListContainer"
@@ -1452,20 +1353,8 @@ local function populateNPCList()
 		end
 	end
 	
-	local npcList = getTeleportNPCList()
-	
-	if #npcList == 0 then
-		local noNpcLabel = Instance.new("TextLabel")
-		noNpcLabel.Size = UDim2_new(1, 0, 0, 40)
-		noNpcLabel.BackgroundTransparency = 1
-		noNpcLabel.Text = "📭 No NPCs found in Workspace.LiveNPCS"
-		noNpcLabel.Font = Enum.Font.Gotham
-		noNpcLabel.TextSize = 11
-		noNpcLabel.TextColor3 = Color3_fromRGB(200, 200, 200)
-		noNpcLabel.TextXAlignment = Enum.TextXAlignment.Center
-		noNpcLabel.Parent = npcListContainer
-		return
-	end
+	local npcList = getNPCList()
+	state.teleportNPCList = npcList
 	
 	for _, npcName in ipairs(npcList) do
 		local npcBtn = Instance.new("TextButton")
@@ -1509,213 +1398,31 @@ end
 
 refreshNPCBtn.MouseButton1Click:Connect(populateNPCList)
 
-teleportToSpawnBtn.MouseButton1Click:Connect(function()
-	local root, _, _ = getCharComponents()
-	if root then
-		task.spawn(function()
-			ultraSmoothTeleport(Vector3_new(0, 10, 0))
-		end)
-	end
+task.spawn(function()
+	task.wait(1)
+	populateNPCList()
 end)
 
-teleportToRandomBtn.MouseButton1Click:Connect(function()
-	local npcList = state.teleportNPCList
-	if #npcList > 0 then
-		local randomNPC = npcList[math.random(1, #npcList)]
-		safeTeleportToNPC(randomNPC)
-	end
-end)
+-- ===== MISC PAGE =====
+createSectionHeader(miscPage, "Misc Features")
 
--- ===== MACROS PAGE =====
-createSectionHeader(macrosPage, "Custom Macros System")
-
--- Macros Info
-local macroInfoContainer = Instance.new("Frame")
-macroInfoContainer.Size = UDim2_new(1, 0, 0, 70)
-macroInfoContainer.BackgroundColor3 = Color3_fromRGB(155, 89, 182)
-macroInfoContainer.BackgroundTransparency = 0.9
-macroInfoContainer.BorderSizePixel = 0
-macroInfoContainer.Parent = macrosPage
-
-local macroInfoCorner = Instance.new("UICorner")
-macroInfoCorner.CornerRadius = UDim.new(0, 6)
-macroInfoCorner.Parent = macroInfoContainer
-
-local macroInfoLabel = Instance.new("TextLabel")
-macroInfoLabel.Size = UDim2_new(1, -20, 1, 0)
-macroInfoLabel.Position = UDim2_new(0, 10, 0, 0)
-macroInfoLabel.BackgroundTransparency = 1
-macroInfoLabel.Text = "🎮 Custom Macros\nCreate custom key sequences\nFormat: Q,E,R (comma separated)\nLoop: Repeats the sequence"
-macroInfoLabel.Font = Enum.Font.Gotham
-macroInfoLabel.TextSize = 10
-macroInfoLabel.TextColor3 = Color3_white
-macroInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
-macroInfoLabel.TextWrapped = true
-macroInfoLabel.Parent = macroInfoContainer
-
--- Create New Macro
-local newMacroNameInput = createInput(macrosPage, "Macro Name (e.g., Farm Combo)")
-local newMacroKeysInput = createInput(macrosPage, "Keys (comma separated, e.g., Q,E,R,Space)")
-local newMacroDelayInput = createInput(macrosPage, "Delay between keys (default: 0.1)")
-
-local macroLoopContainer, macroLoopToggle, macroLoopBg, macroLoopCircle = createToggle(
-	macrosPage,
-	"Loop Macro",
-	"Repeat macro continuously",
-	false
+local noClipContainer, noClipToggle, noClipBg, noClipCircle = createToggle(
+	miscPage,
+	"No Clip",
+	"Walk through walls",
+	noClipEnabled
 )
 
-local addMacroBtn = createButton(macrosPage, "➕ Add New Macro", Color3_fromRGB(46, 204, 113))
-local stopAllMacrosBtn = createButton(macrosPage, "⏹️ Stop All Macros", Color3_fromRGB(231, 76, 60))
-
-createSectionHeader(macrosPage, "Your Macros")
-
--- Macros List Container
-local macrosListContainer = Instance.new("Frame")
-macrosListContainer.Name = "MacrosListContainer"
-macrosListContainer.Size = UDim2_new(1, 0, 0, 0)
-macrosListContainer.AutomaticSize = Enum.AutomaticSize.Y
-macrosListContainer.BackgroundTransparency = 1
-macrosListContainer.Parent = macrosPage
-
-local macrosListLayout = Instance.new("UIListLayout")
-macrosListLayout.Padding = UDim.new(0, 5)
-macrosListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-macrosListLayout.Parent = macrosListContainer
-
--- Function to update macros list
-local function updateMacrosList()
-	for _, child in ipairs(macrosListContainer:GetChildren()) do
-		if child:IsA("Frame") then
-			child:Destroy()
-		end
-	end
-	
-	for index, macro in ipairs(state.macros) do
-		local macroItem = Instance.new("Frame")
-		macroItem.Size = UDim2_new(1, 0, 0, 50)
-		macroItem.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
-		macroItem.BorderSizePixel = 0
-		macroItem.LayoutOrder = index
-		macroItem.Parent = macrosListContainer
-		
-		local macroItemCorner = Instance.new("UICorner")
-		macroItemCorner.CornerRadius = UDim.new(0, 6)
-		macroItemCorner.Parent = macroItem
-		
-		-- Macro Info
-		local macroInfo = Instance.new("TextLabel")
-		macroInfo.Size = UDim2_new(0.6, -10, 1, 0)
-		macroInfo.Position = UDim2_new(0, 10, 0, 0)
-		macroInfo.BackgroundTransparency = 1
-		macroInfo.Text = string.format("🎮 %s\n🔑 %s | ⏱️ %.2fs", 
-			macro.name, 
-			table.concat(macro.keys, ","), 
-			macro.delay)
-		macroInfo.Font = Enum.Font.Gotham
-		macroInfo.TextSize = 10
-		macroInfo.TextColor3 = Color3_white
-		macroInfo.TextXAlignment = Enum.TextXAlignment.Left
-		macroInfo.TextYAlignment = Enum.TextYAlignment.Top
-		macroInfo.Parent = macroItem
-		
-		-- Action Buttons
-		local executeBtn = Instance.new("TextButton")
-		executeBtn.Size = UDim2_new(0, 70, 0, 25)
-		executeBtn.Position = UDim2_new(0.6, 5, 0.5, -12)
-		executeBtn.BackgroundColor3 = Color3_fromRGB(46, 204, 113)
-		executeBtn.Text = "▶️ Run"
-		executeBtn.Font = Enum.Font.GothamBold
-		executeBtn.TextSize = 10
-		executeBtn.TextColor3 = Color3_white
-		executeBtn.BorderSizePixel = 0
-		executeBtn.AutoButtonColor = false
-		executeBtn.Parent = macroItem
-		
-		local executeBtnCorner = Instance.new("UICorner")
-		executeBtnCorner.CornerRadius = UDim.new(0, 4)
-		executeBtnCorner.Parent = executeBtn
-		
-		local deleteBtn = Instance.new("TextButton")
-		deleteBtn.Size = UDim2_new(0, 70, 0, 25)
-		deleteBtn.Position = UDim2_new(0.6, 80, 0.5, -12)
-		deleteBtn.BackgroundColor3 = Color3_fromRGB(231, 76, 60)
-		deleteBtn.Text = "🗑️ Delete"
-		deleteBtn.Font = Enum.Font.GothamBold
-		deleteBtn.TextSize = 10
-		deleteBtn.TextColor3 = Color3_white
-		deleteBtn.BorderSizePixel = 0
-		deleteBtn.AutoButtonColor = false
-		deleteBtn.Parent = macroItem
-		
-		local deleteBtnCorner = Instance.new("UICorner")
-		deleteBtnCorner.CornerRadius = UDim.new(0, 4)
-		deleteBtnCorner.Parent = deleteBtn
-		
-		-- Execute button click
-		executeBtn.MouseButton1Click:Connect(function()
-			MacroSystem.executeMacro(macro)
-			executeBtn.BackgroundColor3 = Color3_fromRGB(52, 152, 219)
-			task.wait(0.5)
-			executeBtn.BackgroundColor3 = Color3_fromRGB(46, 204, 113)
-		end)
-		
-		-- Delete button click
-		deleteBtn.MouseButton1Click:Connect(function()
-			if MacroSystem.removeMacro(index) then
-				updateMacrosList()
-			end
-		end)
-	end
-end
-
--- Add new macro
-addMacroBtn.MouseButton1Click:Connect(function()
-	local name = newMacroNameInput.Text:gsub("^%s*(.-)%s*$", "%1")
-	local keysText = newMacroKeysInput.Text:gsub("^%s*(.-)%s*$", "%1")
-	local delayText = newMacroDelayInput.Text:gsub("^%s*(.-)%s*$", "%1")
-	
-	if name == "" or keysText == "" then
-		return
-	end
-	
-	-- Parse keys
-	local keys = {}
-	for key in keysText:gmatch("([^,]+)") do
-		table.insert(keys, key:gsub("^%s*(.-)%s*$", "%1"))
-	end
-	
-	if #keys == 0 then
-		return
-	end
-	
-	-- Parse delay
-	local delay = tonumber(delayText) or 0.1
-	
-	-- Add macro
-	MacroSystem.addMacro(name, keys, delay, macroLoopEnabled, 1)
-	
-	-- Clear inputs
-	newMacroNameInput.Text = ""
-	newMacroKeysInput.Text = ""
-	newMacroDelayInput.Text = "0.1"
-	
-	-- Update list
-	updateMacrosList()
-end)
-
--- Stop all macros
-stopAllMacrosBtn.MouseButton1Click:Connect(function()
-	MacroSystem.stopAllMacros()
-end)
-
--- Initialize macros list
-updateMacrosList()
+local flyContainer, flyToggle, flyBg, flyCircle = createToggle(
+	miscPage,
+	"Fly",
+	"Fly around the map",
+	flyEnabled
+)
 
 -- ===== TOGGLE FUNCTIONS =====
 toggleUpdateFunctions = {}
 
--- Autofarm
 toggleUpdateFunctions.autofarm = function(enabled)
 	state.autofarmEnabled = enabled
 	
@@ -1734,15 +1441,26 @@ toggleUpdateFunctions.autofarm = function(enabled)
 		disconnectConnection("autofarm")
 		state.lockedNPC = nil
 	end
-	
-	AutoSave.saveSettings()
 end
 
 autofarmToggle.MouseButton1Click:Connect(function()
 	toggleUpdateFunctions.autofarm(not state.autofarmEnabled)
 end)
 
--- Lock On Target
+-- Farm Mode Dropdown Handler
+farmModeDropdown.MouseButton1Click:Connect(function()
+	-- Toggle handled by dropdown itself
+end)
+
+-- Connect to dropdown option changes
+for _, child in ipairs(farmModeContainer:FindFirstChild("Frame"):GetChildren()) do
+	if child:IsA("TextButton") then
+		child.MouseButton1Click:Connect(function()
+			state.autofarmMode = child.Text
+		end)
+	end
+end
+
 toggleUpdateFunctions.lockOn = function(enabled)
 	state.lockOnEnabled = enabled
 	
@@ -1761,15 +1479,12 @@ toggleUpdateFunctions.lockOn = function(enabled)
 		disconnectConnection("lockOn")
 		state.lockedTarget = nil
 	end
-	
-	AutoSave.saveSettings()
 end
 
 lockOnToggle.MouseButton1Click:Connect(function()
 	toggleUpdateFunctions.lockOn(not state.lockOnEnabled)
 end)
 
--- M1 Macro
 toggleUpdateFunctions.m1Macro = function(enabled)
 	state.m1MacroEnabled = enabled
 	
@@ -1787,15 +1502,12 @@ toggleUpdateFunctions.m1Macro = function(enabled)
 	else
 		disconnectConnection("m1macro")
 	end
-	
-	AutoSave.saveSettings()
 end
 
 m1Toggle.MouseButton1Click:Connect(function()
 	toggleUpdateFunctions.m1Macro(not state.m1MacroEnabled)
 end)
 
--- M1 Slider
 local m1Dragging = false
 m1SliderBtn.MouseButton1Down:Connect(function()
 	m1Dragging = true
@@ -1820,11 +1532,9 @@ UserInputService.InputChanged:Connect(function(input)
 		state.m1ClickDelay = value
 		m1ValueLabel.Text = tostring(value)
 		m1SliderFill.Size = UDim2_new(percent, 0, 1, 0)
-		AutoSave.saveSettings()
 	end
 end)
 
--- Speed
 toggleUpdateFunctions.speed = function(enabled)
 	state.speedEnabled = enabled
 	
@@ -1842,24 +1552,15 @@ toggleUpdateFunctions.speed = function(enabled)
 	else
 		disconnectConnection("speed")
 	end
-	
-	AutoSave.saveSettings()
 end
 
 speedToggle.MouseButton1Click:Connect(function()
 	toggleUpdateFunctions.speed(not state.speedEnabled)
 end)
 
--- Speed Slider
 local speedDragging = false
 speedSliderBtn.MouseButton1Down:Connect(function()
 	speedDragging = true
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		speedDragging = false
-	end
 end)
 
 UserInputService.InputChanged:Connect(function(input)
@@ -1875,11 +1576,9 @@ UserInputService.InputChanged:Connect(function(input)
 		state.speedValue = value
 		speedValueLabel.Text = tostring(value)
 		speedSliderFill.Size = UDim2_new(percent, 0, 1, 0)
-		AutoSave.saveSettings()
 	end
 end)
 
--- Infinite Jump
 toggleUpdateFunctions.infiniteJump = function(enabled)
 	state.infiniteJumpEnabled = enabled
 	
@@ -1890,15 +1589,12 @@ toggleUpdateFunctions.infiniteJump = function(enabled)
 	TweenService:Create(jumpCircle, TweenInfo.new(0.2), {
 		Position = enabled and UDim2_new(1, -18, 0.5, -8) or UDim2_new(0, 2, 0.5, -8)
 	}):Play()
-	
-	AutoSave.saveSettings()
 end
 
 jumpToggle.MouseButton1Click:Connect(function()
 	toggleUpdateFunctions.infiniteJump(not state.infiniteJumpEnabled)
 end)
 
--- No Clip
 toggleUpdateFunctions.noClip = function(enabled)
 	noClipEnabled = enabled
 	
@@ -1922,15 +1618,37 @@ toggleUpdateFunctions.noClip = function(enabled)
 		disableNoClip()
 		disconnectConnection("noClip")
 	end
-	
-	AutoSave.saveSettings()
 end
 
 noClipToggle.MouseButton1Click:Connect(function()
 	toggleUpdateFunctions.noClip(not noClipEnabled)
 end)
 
--- ESP
+toggleUpdateFunctions.fly = function(enabled)
+	flyEnabled = enabled
+	
+	TweenService:Create(flyBg, TweenInfo.new(0.2), {
+		BackgroundColor3 = enabled and Color3_fromRGB(100, 180, 255) or Color3_fromRGB(40, 40, 55)
+	}):Play()
+	
+	TweenService:Create(flyCircle, TweenInfo.new(0.2), {
+		Position = enabled and UDim2_new(1, -18, 0.5, -8) or UDim2_new(0, 2, 0.5, -8)
+	}):Play()
+	
+	if enabled then
+		enableFly()
+	else
+		if flyConnection then
+			flyConnection:Disconnect()
+			flyConnection = nil
+		end
+	end
+end
+
+flyToggle.MouseButton1Click:Connect(function()
+	toggleUpdateFunctions.fly(not flyEnabled)
+end)
+
 toggleUpdateFunctions.esp = function(enabled)
 	state.espEnabled = enabled
 	
@@ -1945,15 +1663,12 @@ toggleUpdateFunctions.esp = function(enabled)
 	if not enabled then
 		clearAllESP()
 	end
-	
-	AutoSave.saveSettings()
 end
 
 espToggle.MouseButton1Click:Connect(function()
 	toggleUpdateFunctions.esp(not state.espEnabled)
 end)
 
--- Tracers
 toggleUpdateFunctions.tracers = function(enabled)
 	state.tracersEnabled = enabled
 	
@@ -1968,15 +1683,12 @@ toggleUpdateFunctions.tracers = function(enabled)
 	if not enabled then
 		clearAllTracers()
 	end
-	
-	AutoSave.saveSettings()
 end
 
 tracersToggle.MouseButton1Click:Connect(function()
 	toggleUpdateFunctions.tracers(not state.tracersEnabled)
 end)
 
--- Health Bars
 toggleUpdateFunctions.healthBars = function(enabled)
 	state.healthBarsEnabled = enabled
 	
@@ -1991,15 +1703,12 @@ toggleUpdateFunctions.healthBars = function(enabled)
 	if not enabled then
 		clearAllHealthBars()
 	end
-	
-	AutoSave.saveSettings()
 end
 
 healthBarsToggle.MouseButton1Click:Connect(function()
 	toggleUpdateFunctions.healthBars(not state.healthBarsEnabled)
 end)
 
--- Player ESP
 toggleUpdateFunctions.playerESP = function(enabled)
 	playerESPEnabled = enabled
 	
@@ -2010,15 +1719,12 @@ toggleUpdateFunctions.playerESP = function(enabled)
 	TweenService:Create(playerESPCircle, TweenInfo.new(0.2), {
 		Position = enabled and UDim2_new(1, -18, 0.5, -8) or UDim2_new(0, 2, 0.5, -8)
 	}):Play()
-	
-	AutoSave.saveSettings()
 end
 
 playerESPToggle.MouseButton1Click:Connect(function()
 	toggleUpdateFunctions.playerESP(not playerESPEnabled)
 end)
 
--- FOV Circle
 toggleUpdateFunctions.fov = function(enabled)
 	fovEnabled = enabled
 	
@@ -2035,8 +1741,6 @@ toggleUpdateFunctions.fov = function(enabled)
 	else
 		removeFOVCircle()
 	end
-	
-	AutoSave.saveSettings()
 end
 
 fovToggle.MouseButton1Click:Connect(function()
@@ -2064,33 +1768,10 @@ UserInputService.InputBegan:Connect(function(input, processed)
 	if input.KeyCode == Enum.KeyCode.F1 then
 		state.guiVisible = not state.guiVisible
 		mainFrame.Visible = state.guiVisible
-		AutoSave.saveSettings()
 	end
 
 	if input.KeyCode == Enum.KeyCode.F2 then
 		toggleUpdateFunctions.m1Macro(not state.m1MacroEnabled)
-	end
-	
-	if input.KeyCode == Enum.KeyCode.F3 then
-		-- Quick teleport to closest NPC
-		local npcList = state.teleportNPCList
-		if #npcList > 0 then
-			local npcName = npcList[1]
-			safeTeleportToNPC(npcName)
-		end
-	end
-	
-	if input.KeyCode == Enum.KeyCode.F4 then
-		-- Quick save
-		AutoSave.saveSettings()
-	end
-end)
-
--- ===== AUTO-SAVE TIMER =====
-task.spawn(function()
-	while true do
-		task.wait(CONFIG.AUTO_SAVE_INTERVAL)
-		AutoSave.saveSettings()
 	end
 end)
 
@@ -2109,63 +1790,6 @@ player.CharacterAdded:Connect(function(char)
 	end
 end)
 
--- ===== LOAD SAVED SETTINGS =====
-task.spawn(function()
-	task.wait(1)
-	AutoSave.loadSettings()
-	
-	-- Apply loaded settings to UI
-	if toggleUpdateFunctions.autofarm then
-		toggleUpdateFunctions.autofarm(state.autofarmEnabled)
-	end
-	if toggleUpdateFunctions.lockOn then
-		toggleUpdateFunctions.lockOn(state.lockOnEnabled)
-	end
-	if toggleUpdateFunctions.m1Macro then
-		toggleUpdateFunctions.m1Macro(state.m1MacroEnabled)
-	end
-	if toggleUpdateFunctions.speed then
-		toggleUpdateFunctions.speed(state.speedEnabled)
-	end
-	if toggleUpdateFunctions.infiniteJump then
-		toggleUpdateFunctions.infiniteJump(state.infiniteJumpEnabled)
-	end
-	if toggleUpdateFunctions.noClip then
-		toggleUpdateFunctions.noClip(noClipEnabled)
-	end
-	if toggleUpdateFunctions.esp then
-		toggleUpdateFunctions.esp(state.espEnabled)
-	end
-	if toggleUpdateFunctions.tracers then
-		toggleUpdateFunctions.tracers(state.tracersEnabled)
-	end
-	if toggleUpdateFunctions.healthBars then
-		toggleUpdateFunctions.healthBars(state.healthBarsEnabled)
-	end
-	if toggleUpdateFunctions.playerESP then
-		toggleUpdateFunctions.playerESP(playerESPEnabled)
-	end
-	if toggleUpdateFunctions.fov then
-		toggleUpdateFunctions.fov(fovEnabled)
-	end
-	
-	-- Update slider values
-	m1ValueLabel.Text = tostring(state.m1ClickDelay)
-	m1SliderFill.Size = UDim2_new((state.m1ClickDelay - m1Min) / (m1Max - m1Min), 0, 1, 0)
-	
-	speedValueLabel.Text = tostring(state.speedValue)
-	speedSliderFill.Size = UDim2_new((state.speedValue - speedMin) / (speedMax - speedMin), 0, 1, 0)
-	
-	-- Restore GUI position
-	if state.guiPosition then
-		mainFrame.Position = UDim2_new(state.guiPosition[1], state.guiPosition[2], 
-									   state.guiPosition[3], state.guiPosition[4])
-	end
-	
-	populateNPCList()
-	updateMacrosList()
-end)
-
 -- ===== CLEANUP =====
 screenGui.Destroying:Connect(function()
 	cleanAllConnections()
@@ -2176,22 +1800,17 @@ screenGui.Destroying:Connect(function()
 	for player, esp in pairs(playerESPObjects) do
 		if esp then esp:Destroy() end
 	end
-	
-	-- Final save
-	AutoSave.saveSettings()
 end)
 
 -- ===== STARTUP =====
 print("═══════════════════════════════════════════════")
-print("        CYBER HUB - FFRE EDITION V4.2")
+print("        CYBER HUB - FFRE EDITION V4.3")
 print("═══════════════════════════════════════════════")
-print("  ⚔️  Combat: Auto Farm | Lock On | M1 Macro")
-print("  🚀  Movement: Speed | Infinite Jump | No Clip")
+print("  ⚔️  Combat: Auto Farm (Behind/Above)")
+print("  🎯  Lock On | M1 Macro")
+print("  🚀  Movement: Speed | Infinite Jump | No Clip | Fly")
 print("  👁️  Visual: ESP | Tracers | Health Bars")
-print("  📍  Teleport: Workspace.LiveNPCS")
-print("  🎮  Macros: Custom key sequences")
-print("  💾  Auto-Save: Settings saved automatically")
+print("  📍  Teleport: Ultra Smooth (Anti-Kick)")
 print("═══════════════════════════════════════════════")
 print("  F1 - Toggle GUI | F2 - Toggle M1 Macro")
-print("  F3 - Quick Teleport | F4 - Quick Save")
 print("═══════════════════════════════════════════════")
