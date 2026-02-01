@@ -41,6 +41,7 @@ local Color3_black = Color3.new(0,0,0)
 local state = {
 	autofarmEnabled = false,
 	autofarmMode = "Behind", -- "Behind" or "Above"
+	autofarmDistance = 8, -- distância entre player e NPC (Behind = atrás, Above = altura) - alterável por slider
 	infiniteJumpEnabled = false,
 	speedEnabled = false,
 	m1MacroEnabled = false,
@@ -603,14 +604,26 @@ local function autofarmLoop()
 	local targetCFrame
 	
 	if state.autofarmMode == "Above" then
-		-- Above NPC: jogador acima do NPC e "deitado" (horizontal, como nas imagens)
-		local abovePos = npcRoot.Position + Vector3_new(0, CONFIG.ABOVE_HEIGHT, 0)
-		local rotacaoDeitado = CFrame.Angles(math.rad(90), 0, 0) -- 90° no X = personagem deitado
-		targetCFrame = CFrame_new(abovePos) * rotacaoDeitado
+		-- Above NPC: jogador acima do NPC, deitado e virado para o NPC (distância = state.autofarmDistance)
+		local dist = state.autofarmDistance
+		local abovePos = npcRoot.Position + Vector3_new(0, dist, 0)
+		-- Deitado: -90° no X (barriga para baixo, face para o NPC). Depois rotação Y para alinhar com o NPC no plano XZ
+		local dirX = npcRoot.Position.X - abovePos.X
+		local dirZ = npcRoot.Position.Z - abovePos.Z
+		local angleY
+		if dirX * dirX + dirZ * dirZ > 0.01 then
+			angleY = math.atan2(dirX, dirZ)
+		else
+			local look = npcRoot.CFrame.LookVector
+			angleY = math.atan2(-look.X, -look.Z)
+		end
+		local rotacaoDeitado = CFrame.Angles(-math.rad(90), 0, 0)
+		local rotacaoFaceNPC = CFrame.Angles(0, angleY, 0)
+		targetCFrame = CFrame_new(abovePos) * rotacaoDeitado * rotacaoFaceNPC
 	else
-		-- Behind NPC: atrás do NPC (padrão)
+		-- Behind NPC: atrás do NPC (distância = state.autofarmDistance)
 		local npcCFrame = npcRoot.CFrame
-		local backVector = -npcCFrame.LookVector * CONFIG.BACK_DISTANCE
+		local backVector = -npcCFrame.LookVector * state.autofarmDistance
 		local upVector = Vector3_new(0, CONFIG.HEIGHT_OFFSET, 0)
 		targetCFrame = CFrame_new(npcRoot.Position + backVector + upVector)
 	end
@@ -1297,6 +1310,20 @@ end)
 
 updateFarmPositionVisuals()
 
+-- Slider: distância entre player e NPC no autofarm (Behind = atrás, Above = altura) - altera em tempo real
+local autofarmDistContainer, autofarmDistSliderBtn, autofarmDistSliderFill, autofarmDistValueLabel, autofarmDistMin, autofarmDistMax = createSlider(
+	combatPage,
+	"Autofarm Distance",
+	1,
+	25,
+	state.autofarmDistance
+)
+
+local autofarmDistDragging = false
+autofarmDistSliderBtn.MouseButton1Down:Connect(function()
+	autofarmDistDragging = true
+end)
+
 local lockOnContainer, lockOnToggle, lockOnBg, lockOnCircle = createToggle(
 	combatPage,
 	"Lock On Target",
@@ -1570,10 +1597,23 @@ end)
 UserInputService.InputEnded:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
 		m1Dragging = false
+		autofarmDistDragging = false
 	end
 end)
 
 UserInputService.InputChanged:Connect(function(input)
+	if autofarmDistDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+		local sliderBg = autofarmDistSliderBtn.Parent
+		local mousePos = UserInputService:GetMouseLocation().X
+		local sliderPos = sliderBg.AbsolutePosition.X
+		local sliderSize = sliderBg.AbsoluteSize.X
+		local percent = math.clamp((mousePos - sliderPos) / sliderSize, 0, 1)
+		local value = autofarmDistMin + (percent * (autofarmDistMax - autofarmDistMin))
+		value = math.floor(value * 10) / 10
+		state.autofarmDistance = value
+		autofarmDistValueLabel.Text = tostring(value)
+		autofarmDistSliderFill.Size = UDim2_new(percent, 0, 1, 0)
+	end
 	if m1Dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
 		local sliderBg = m1SliderBtn.Parent
 		local mousePos = UserInputService:GetMouseLocation().X
