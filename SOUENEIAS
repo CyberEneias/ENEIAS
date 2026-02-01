@@ -75,11 +75,13 @@ local state = {
 
 -- Additional global states
 local noClipEnabled = false
-local flyEnabled = false
 local playerESPEnabled = false
 local fovEnabled = false
 local playerESPObjects = {}
 local fovCircle = nil
+
+-- ===== TOGGLE FUNCTIONS TABLE =====
+local toggleUpdateFunctions = {}
 
 -- ===== UTILS =====
 local function disconnectConnection(name)
@@ -651,46 +653,6 @@ local function disableNoClip()
 			part.CanCollide = true
 		end
 	end
-end
-
--- ===== FLY =====
-local flySpeed = 50
-local flyConnection = nil
-
-local function enableFly()
-	local root, hum, char = getCharComponents()
-	if not root or not hum then return end
-	
-	local bodyVelocity = Instance.new("BodyVelocity")
-	bodyVelocity.MaxForce = Vector3_new(math.huge, math.huge, math.huge)
-	bodyVelocity.Velocity = Vector3_zero
-	bodyVelocity.Parent = root
-	
-	local bodyGyro = Instance.new("BodyGyro")
-	bodyGyro.MaxTorque = Vector3_new(math.huge, math.huge, math.huge)
-	bodyGyro.P = 9000
-	bodyGyro.CFrame = root.CFrame
-	bodyGyro.Parent = root
-	
-	flyConnection = RunService.Heartbeat:Connect(function()
-		if not flyEnabled then
-			if bodyVelocity then bodyVelocity:Destroy() end
-			if bodyGyro then bodyGyro:Destroy() end
-			if flyConnection then flyConnection:Disconnect() end
-			return
-		end
-		
-		local camera = workspace.CurrentCamera
-		local moveDir = hum.MoveDirection
-		
-		if moveDir.Magnitude > 0 then
-			bodyVelocity.Velocity = camera.CFrame.LookVector * flySpeed
-		else
-			bodyVelocity.Velocity = Vector3_zero
-		end
-		
-		bodyGyro.CFrame = camera.CFrame
-	end)
 end
 
 -- ===== CLEANUP OLD GUI =====
@@ -1413,16 +1375,7 @@ local noClipContainer, noClipToggle, noClipBg, noClipCircle = createToggle(
 	noClipEnabled
 )
 
-local flyContainer, flyToggle, flyBg, flyCircle = createToggle(
-	miscPage,
-	"Fly",
-	"Fly around the map",
-	flyEnabled
-)
-
 -- ===== TOGGLE FUNCTIONS =====
-toggleUpdateFunctions = {}
-
 toggleUpdateFunctions.autofarm = function(enabled)
 	state.autofarmEnabled = enabled
 	
@@ -1448,16 +1401,15 @@ autofarmToggle.MouseButton1Click:Connect(function()
 end)
 
 -- Farm Mode Dropdown Handler
-farmModeDropdown.MouseButton1Click:Connect(function()
-	-- Toggle handled by dropdown itself
-end)
-
--- Connect to dropdown option changes
-for _, child in ipairs(farmModeContainer:FindFirstChild("Frame"):GetChildren()) do
-	if child:IsA("TextButton") then
-		child.MouseButton1Click:Connect(function()
-			state.autofarmMode = child.Text
-		end)
+local farmModeOptionsFrame = farmModeContainer:FindFirstChild("Frame")
+if farmModeOptionsFrame then
+	for _, child in ipairs(farmModeOptionsFrame:GetChildren()) do
+		if child:IsA("TextButton") then
+			child.MouseButton1Click:Connect(function()
+				state.autofarmMode = child.Text
+				farmModeDropdown.Text = child.Text .. "  ▼"
+			end)
+		end
 	end
 end
 
@@ -1624,31 +1576,6 @@ noClipToggle.MouseButton1Click:Connect(function()
 	toggleUpdateFunctions.noClip(not noClipEnabled)
 end)
 
-toggleUpdateFunctions.fly = function(enabled)
-	flyEnabled = enabled
-	
-	TweenService:Create(flyBg, TweenInfo.new(0.2), {
-		BackgroundColor3 = enabled and Color3_fromRGB(100, 180, 255) or Color3_fromRGB(40, 40, 55)
-	}):Play()
-	
-	TweenService:Create(flyCircle, TweenInfo.new(0.2), {
-		Position = enabled and UDim2_new(1, -18, 0.5, -8) or UDim2_new(0, 2, 0.5, -8)
-	}):Play()
-	
-	if enabled then
-		enableFly()
-	else
-		if flyConnection then
-			flyConnection:Disconnect()
-			flyConnection = nil
-		end
-	end
-end
-
-flyToggle.MouseButton1Click:Connect(function()
-	toggleUpdateFunctions.fly(not flyEnabled)
-end)
-
 toggleUpdateFunctions.esp = function(enabled)
 	state.espEnabled = enabled
 	
@@ -1808,7 +1735,7 @@ print("        CYBER HUB - FFRE EDITION V4.3")
 print("═══════════════════════════════════════════════")
 print("  ⚔️  Combat: Auto Farm (Behind/Above)")
 print("  🎯  Lock On | M1 Macro")
-print("  🚀  Movement: Speed | Infinite Jump | No Clip | Fly")
+print("  🚀  Movement: Speed | Infinite Jump | No Clip")
 print("  👁️  Visual: ESP | Tracers | Health Bars")
 print("  📍  Teleport: Ultra Smooth (Anti-Kick)")
 print("═══════════════════════════════════════════════")
