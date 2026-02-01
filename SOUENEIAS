@@ -41,7 +41,7 @@ local Color3_black = Color3.new(0,0,0)
 local state = {
 	autofarmEnabled = false,
 	autofarmMode = "Behind", -- "Behind" or "Above"
-	autofarmDistance = 8, -- distância entre player e NPC (Behind = atrás, Above = altura) - alterável por slider
+	autofarmDistance = 6, -- distância entre player e NPC (Behind = atrás, Above = altura) - alterável por slider
 	infiniteJumpEnabled = false,
 	speedEnabled = false,
 	m1MacroEnabled = false,
@@ -604,28 +604,26 @@ local function autofarmLoop()
 	local targetCFrame
 	
 	if state.autofarmMode == "Above" then
-		-- Above NPC: jogador acima do NPC, deitado e virado para o NPC (distância = state.autofarmDistance)
+		-- Above NPC: jogador acima do NPC, virado para baixo (deitado)
 		local dist = state.autofarmDistance
 		local abovePos = npcRoot.Position + Vector3_new(0, dist, 0)
-		-- Deitado: -90° no X (barriga para baixo, face para o NPC). Depois rotação Y para alinhar com o NPC no plano XZ
-		local dirX = npcRoot.Position.X - abovePos.X
-		local dirZ = npcRoot.Position.Z - abovePos.Z
-		local angleY
-		if dirX * dirX + dirZ * dirZ > 0.01 then
-			angleY = math.atan2(dirX, dirZ)
-		else
-			local look = npcRoot.CFrame.LookVector
-			angleY = math.atan2(-look.X, -look.Z)
-		end
-		local rotacaoDeitado = CFrame.Angles(math.rad(90), 0, 0)
-		local rotacaoFaceNPC = CFrame.Angles(0, angleY, 0)
-		targetCFrame = CFrame_new(abovePos) * rotacaoDeitado * rotacaoFaceNPC
+		
+		-- Criar um CFrame que olha diretamente para baixo
+		-- Para olhar para baixo, precisamos rotacionar 90° no eixo X
+		local rotationCFrame = CFrame.Angles(math.rad(90), 0, 0)
+		
+		-- Opcional: alinhar com a direção do NPC no plano horizontal
+		local npcLook = npcRoot.CFrame.LookVector
+		local horizontalAngle = math.atan2(-npcLook.X, -npcLook.Z)
+		local horizontalRotation = CFrame.Angles(0, horizontalAngle, 0)
+		
+		targetCFrame = CFrame.new(abovePos) * rotationCFrame * horizontalRotation
 	else
 		-- Behind NPC: atrás do NPC (distância = state.autofarmDistance)
 		local npcCFrame = npcRoot.CFrame
 		local backVector = -npcCFrame.LookVector * state.autofarmDistance
 		local upVector = Vector3_new(0, CONFIG.HEIGHT_OFFSET, 0)
-		targetCFrame = CFrame_new(npcRoot.Position + backVector + upVector)
+		targetCFrame = CFrame.new(npcRoot.Position + backVector + upVector, npcRoot.Position)
 	end
 
 	root.AssemblyLinearVelocity = Vector3_zero
