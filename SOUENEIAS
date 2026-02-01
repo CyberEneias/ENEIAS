@@ -603,9 +603,10 @@ local function autofarmLoop()
 	local targetCFrame
 	
 	if state.autofarmMode == "Above" then
-		-- Above NPC: jogador diretamente acima do NPC (como o ponto vermelho nas imagens)
+		-- Above NPC: jogador acima do NPC e "deitado" (horizontal, como nas imagens)
 		local abovePos = npcRoot.Position + Vector3_new(0, CONFIG.ABOVE_HEIGHT, 0)
-		targetCFrame = CFrame_new(abovePos)
+		local rotacaoDeitado = CFrame.Angles(math.rad(90), 0, 0) -- 90° no X = personagem deitado
+		targetCFrame = CFrame_new(abovePos) * rotacaoDeitado
 	else
 		-- Behind NPC: atrás do NPC (padrão)
 		local npcCFrame = npcRoot.CFrame
