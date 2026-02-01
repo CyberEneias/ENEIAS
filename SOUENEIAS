@@ -617,7 +617,7 @@ local function autofarmLoop()
 			local look = npcRoot.CFrame.LookVector
 			angleY = math.atan2(-look.X, -look.Z)
 		end
-		local rotacaoDeitado = CFrame.Angles(-math.rad(90), 0, 0)
+		local rotacaoDeitado = CFrame.Angles(math.rad(90), 0, 0)
 		local rotacaoFaceNPC = CFrame.Angles(0, angleY, 0)
 		targetCFrame = CFrame_new(abovePos) * rotacaoDeitado * rotacaoFaceNPC
 	else
