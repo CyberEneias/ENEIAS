@@ -601,34 +601,31 @@ local function autofarmLoop()
 		return
 	end
 
-	local targetCFrame
+	local targetPosition
 	
 	if state.autofarmMode == "Above" then
-		-- Above NPC: jogador acima do NPC, virado para baixo (deitado)
+		-- Above NPC: posição fixa acima do NPC, olhando para baixo
 		local dist = state.autofarmDistance
-		local abovePos = npcRoot.Position + Vector3_new(0, dist, 0)
+		targetPosition = npcRoot.Position + Vector3_new(0, dist, 0)
 		
-		-- Criar um CFrame que olha diretamente para baixo (para frente = -Z)
-		-- Usar CFrame.fromOrientation para evitar problemas de rotação acumulativa
-		local lookVector = (npcRoot.Position - abovePos).Unit
-		local upVector = Vector3.new(0, -1, 0) -- Virado para baixo
-		local rightVector = lookVector:Cross(upVector)
+		-- CFrame fixo que sempre olha para baixo
+		-- Rotação: 90° no eixo X (virado para baixo), 0° nos outros eixos
+		local targetCFrame = CFrame.new(targetPosition) * CFrame.Angles(math.rad(90), 0, 0)
 		
-		-- Recalcular upVector para ser ortogonal
-		upVector = rightVector:Cross(lookVector)
-		
-		targetCFrame = CFrame.fromMatrix(abovePos, rightVector, upVector, -lookVector)
+		root.AssemblyLinearVelocity = Vector3_zero
+		root.AssemblyAngularVelocity = Vector3_zero
+		root.CFrame = targetCFrame
 	else
 		-- Behind NPC: atrás do NPC (distância = state.autofarmDistance)
 		local npcCFrame = npcRoot.CFrame
 		local backVector = -npcCFrame.LookVector * state.autofarmDistance
 		local upVector = Vector3_new(0, CONFIG.HEIGHT_OFFSET, 0)
-		targetCFrame = CFrame.new(npcRoot.Position + backVector + upVector, npcRoot.Position)
+		targetPosition = npcRoot.Position + backVector + upVector
+		
+		root.AssemblyLinearVelocity = Vector3_zero
+		root.AssemblyAngularVelocity = Vector3_zero
+		root.CFrame = CFrame.new(targetPosition, npcRoot.Position)
 	end
-
-	root.AssemblyLinearVelocity = Vector3_zero
-	root.AssemblyAngularVelocity = Vector3_zero
-	root.CFrame = targetCFrame
 end
 
 -- ===== SPEED BOOST =====
