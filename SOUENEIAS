@@ -610,7 +610,7 @@ local function autofarmLoop()
 		
 		-- CFrame fixo que sempre olha para baixo
 		-- Rotação: 90° no eixo X (virado para baixo), 0° nos outros eixos
-		local targetCFrame = CFrame.new(targetPosition) * CFrame.Angles(math.rad(90), 0, 0)
+		local targetCFrame = CFrame.new(targetPosition) * CFrame.Angles(math.rad(-90), 0, 0)
 		
 		root.AssemblyLinearVelocity = Vector3_zero
 		root.AssemblyAngularVelocity = Vector3_zero
