@@ -8,7 +8,6 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
 local TweenService = game:GetService("TweenService")
-local HttpService = game:GetService("HttpService")
 
 local player = Players.LocalPlayer
 if not player then return end
@@ -29,428 +28,6 @@ local CONFIG = {
 	TELEPORT_NPC_FOLDER = workspace:WaitForChild("LiveNPCS")
 }
 
--- ===== CONFIG SYSTEM PARA VELOCITY =====
-local CONFIG_SYSTEM = {
-    CONFIG_FOLDER_NAME = "CyberHub_Configs",
-    CONFIG_FILE_EXTENSION = ".json",
-    AUTO_LOAD_CONFIG = "default",
-    AUTO_SAVE = true
-}
-
--- Verifica se Velocity tem suporte para sistema de arquivos
-local hasFileSystem = false
-
--- Tenta detectar a API de arquivos
-if pcall(function() 
-    if readfile and writefile and isfolder and makefolder then
-        return true
-    end
-    return false
-end) then
-    hasFileSystem = true
-    print("[Config System] File functions detected")
-else
-    print("[Config System] Using LocalStorage fallback")
-end
-
--- ===== CONFIG DATA STRUCTURE =====
-local DEFAULT_CONFIG_DATA = {
-	autofarmEnabled = false,
-	autofarmMode = "Behind",
-	autofarmDistance = 8,
-	infiniteJumpEnabled = false,
-	speedEnabled = false,
-	speedValue = 160,
-	m1MacroEnabled = false,
-	m1ClickDelay = 0.15,
-	espEnabled = false,
-	tracersEnabled = false,
-	healthBarsEnabled = false,
-	lockOnEnabled = false,
-	playerESPEnabled = false,
-	fovEnabled = false,
-	noClipEnabled = false,
-	teleportNPCList = {}
-}
-
--- ===== CONFIG FUNCTIONS PARA VELOCITY =====
--- Função para criar pasta (fallback para Velocity)
-local function ensureConfigFolder()
-    if hasFileSystem then
-        if not isfolder then
-            return false
-        end
-        if not isfolder(CONFIG_SYSTEM.CONFIG_FOLDER_NAME) then
-            makefolder(CONFIG_SYSTEM.CONFIG_FOLDER_NAME)
-        end
-        return true
-    else
-        -- No Velocity, usamos LocalStorage
-        return true
-    end
-end
-
--- Salvar no LocalStorage (fallback para Velocity)
-local function saveToLocalStorage(configName, configData)
-    local success, encoded = pcall(function()
-        return HttpService:JSONEncode(configData)
-    end)
-    
-    if success then
-        -- Salva no LocalStorage usando atributos do jogador
-        pcall(function()
-            player:SetAttribute("CyberConfig_"..configName, encoded)
-        end)
-        
-        -- Também salva em um DataStore global
-        _G.CyberHubConfigs = _G.CyberHubConfigs or {}
-        _G.CyberHubConfigs[configName] = encoded
-        
-        print("[Config] Saved to LocalStorage: " .. configName)
-        return true, "Config saved successfully!"
-    end
-    return false, "Failed to encode config"
-end
-
--- Carregar do LocalStorage
-local function loadFromLocalStorage(configName)
-    local encoded = nil
-    
-    -- Tenta carregar do atributo do jogador
-    pcall(function()
-        encoded = player:GetAttribute("CyberConfig_"..configName)
-    end)
-    
-    -- Se não encontrar, tenta do DataStore global
-    if not encoded and _G.CyberHubConfigs then
-        encoded = _G.CyberHubConfigs[configName]
-    end
-    
-    if encoded then
-        local success, configData = pcall(function()
-            return HttpService:JSONDecode(encoded)
-        end)
-        
-        if success then
-            return true, configData
-        end
-    end
-    
-    return false, "Config not found"
-end
-
--- Salvar no sistema de arquivos (se disponível)
-local function saveToFileSystem(configName, configData)
-    if not hasFileSystem then
-        return false, "File system not available"
-    end
-    
-    local success, encoded = pcall(function()
-        return HttpService:JSONEncode(configData)
-    end)
-    
-    if not success then
-        return false, "Failed to encode config data"
-    end
-    
-    local fileName = configName .. CONFIG_SYSTEM.CONFIG_FILE_EXTENSION
-    local filePath = CONFIG_SYSTEM.CONFIG_FOLDER_NAME .. "/" .. fileName
-    
-    -- Cria pasta se não existir
-    ensureConfigFolder()
-    
-    -- Salva arquivo
-    pcall(function()
-        writefile(filePath, encoded)
-    end)
-    
-    return true, "Config saved to file!"
-end
-
--- Carregar do sistema de arquivos
-local function loadFromFileSystem(configName)
-    if not hasFileSystem then
-        return false, "File system not available"
-    end
-    
-    local fileName = configName .. CONFIG_SYSTEM.CONFIG_FILE_EXTENSION
-    local filePath = CONFIG_SYSTEM.CONFIG_FOLDER_NAME .. "/" .. fileName
-    
-    if not pcall(function() 
-        if isfile then
-            return isfile(filePath)
-        end
-        return false
-    end) then
-        return false, "Config file not found"
-    end
-    
-    local fileContent = readfile(filePath)
-    local success, configData = pcall(function()
-        return HttpService:JSONDecode(fileContent)
-    end)
-    
-    if success then
-        return true, configData
-    end
-    
-    return false, "Failed to parse config data"
-end
-
--- Funções principais unificadas
-local function createConfig(configName)
-    configName = configName or "default"
-    if configName == "" then configName = "default" end
-    
-    -- Limpa nome do arquivo
-    configName = configName:gsub("%s+", "_"):gsub("[^%w_%-%.]", "")
-    
-    local configData = {
-        configName = configName,
-        timestamp = os.date("%Y-%m-%d %H:%M:%S"),
-        version = "4.3",
-        settings = {}
-    }
-    
-    -- Coleta todas as configurações atuais
-    for key, defaultValue in pairs(DEFAULT_CONFIG_DATA) do
-        if state[key] ~= nil then
-            configData.settings[key] = state[key]
-        else
-            configData.settings[key] = defaultValue
-        end
-    end
-    
-    -- Estados extras
-    configData.settings.playerESPEnabled = playerESPEnabled
-    configData.settings.fovEnabled = fovEnabled
-    configData.settings.noClipEnabled = noClipEnabled
-    
-    -- Tenta salvar em arquivo primeiro
-    local success, message = saveToFileSystem(configName, configData)
-    if not success then
-        -- Fallback para LocalStorage
-        success, message = saveToLocalStorage(configName, configData)
-    end
-    
-    return success, message
-end
-
-local function loadConfig(configName)
-    configName = configName or CONFIG_SYSTEM.AUTO_LOAD_CONFIG
-    if configName == "" then configName = "default" end
-    
-    local success, configData
-    
-    -- Tenta carregar do arquivo primeiro
-    success, configData = loadFromFileSystem(configName)
-    if not success then
-        -- Fallback para LocalStorage
-        success, configData = loadFromLocalStorage(configName)
-    end
-    
-    if not success then
-        return false, "Config '" .. configName .. "' not found"
-    end
-    
-    -- Aplica as configurações
-    if configData.settings then
-        for key, value in pairs(configData.settings) do
-            if state[key] ~= nil then
-                state[key] = value
-                
-                -- Atualiza toggles visuais
-                if toggleUpdateFunctions[key] then
-                    toggleUpdateFunctions[key](value)
-                end
-            end
-            
-            -- Estados extras
-            if key == "playerESPEnabled" then
-                playerESPEnabled = value
-                if toggleUpdateFunctions.playerESP then
-                    toggleUpdateFunctions.playerESP(value)
-                end
-            elseif key == "fovEnabled" then
-                fovEnabled = value
-                if toggleUpdateFunctions.fov then
-                    toggleUpdateFunctions.fov(value)
-                end
-            elseif key == "noClipEnabled" then
-                noClipEnabled = value
-                if toggleUpdateFunctions.noClip then
-                    toggleUpdateFunctions.noClip(value)
-                end
-            end
-        end
-        
-        -- Atualizar sliders UI
-        if state.autofarmDistance and autofarmDistValueLabel then
-            autofarmDistValueLabel.Text = tostring(state.autofarmDistance)
-            local percent = (state.autofarmDistance - autofarmDistMin) / (autofarmDistMax - autofarmDistMin)
-            autofarmDistSliderFill.Size = UDim2_new(percent, 0, 1, 0)
-        end
-        
-        if state.m1ClickDelay and m1ValueLabel then
-            m1ValueLabel.Text = tostring(state.m1ClickDelay)
-            local percent = (state.m1ClickDelay - m1Min) / (m1Max - m1Min)
-            m1SliderFill.Size = UDim2_new(percent, 0, 1, 0)
-        end
-        
-        if state.speedValue and speedValueLabel then
-            speedValueLabel.Text = tostring(state.speedValue)
-            local percent = (state.speedValue - speedMin) / (speedMax - speedMin)
-            speedSliderFill.Size = UDim2_new(percent, 0, 1, 0)
-        end
-        
-        -- Atualizar modo de farm
-        if state.autofarmMode then
-            updateFarmPositionVisuals()
-        end
-    end
-    
-    return true, "Config '" .. configName .. "' loaded successfully!"
-end
-
-local function overwriteConfig(configName)
-    configName = configName or "default"
-    if configName == "" then configName = "default" end
-    
-    -- Carrega config existente se possível
-    local existingData = {}
-    local success, loadedData = loadFromFileSystem(configName)
-    if not success then
-        success, loadedData = loadFromLocalStorage(configName)
-    end
-    
-    if success and loadedData then
-        existingData = loadedData
-    end
-    
-    -- Atualiza com dados atuais
-    local configData = existingData or {
-        configName = configName,
-        version = "4.3"
-    }
-    
-    configData.timestamp = os.date("%Y-%m-%d %H:%M:%S")
-    configData.settings = configData.settings or {}
-    
-    -- Atualiza com configurações atuais
-    for key, defaultValue in pairs(DEFAULT_CONFIG_DATA) do
-        if state[key] ~= nil then
-            configData.settings[key] = state[key]
-        else
-            configData.settings[key] = defaultValue
-        end
-    end
-    
-    -- Adicionar estados extras
-    configData.settings.playerESPEnabled = playerESPEnabled
-    configData.settings.fovEnabled = fovEnabled
-    configData.settings.noClipEnabled = noClipEnabled
-    
-    -- Preservar lista de NPCs se existir
-    if not configData.settings.teleportNPCList then
-        configData.settings.teleportNPCList = state.teleportNPCList or {}
-    end
-    
-    -- Tenta salvar em arquivo primeiro
-    local success, message = saveToFileSystem(configName, configData)
-    if not success then
-        -- Fallback para LocalStorage
-        success, message = saveToLocalStorage(configName, configData)
-    end
-    
-    return success, message
-end
-
-local function getConfigList()
-    local configs = {}
-    
-    -- Primeiro tenta listar do sistema de arquivos
-    if hasFileSystem and listfiles then
-        pcall(function()
-            if isfolder(CONFIG_SYSTEM.CONFIG_FOLDER_NAME) then
-                local files = listfiles(CONFIG_SYSTEM.CONFIG_FOLDER_NAME)
-                for _, filePath in ipairs(files) do
-                    local fileName = filePath:match("[^/\\]+$")
-                    if fileName:match("%.json$") then
-                        local configName = fileName:gsub(CONFIG_SYSTEM.CONFIG_FILE_EXTENSION, "")
-                        table.insert(configs, configName)
-                    end
-                end
-            end
-        end)
-    end
-    
-    -- Depois adiciona do LocalStorage
-    pcall(function()
-        if _G.CyberHubConfigs then
-            for configName, _ in pairs(_G.CyberHubConfigs) do
-                if not table.find(configs, configName) then
-                    table.insert(configs, configName)
-                end
-            end
-        end
-    end)
-    
-    -- Verifica atributos do jogador
-    pcall(function()
-        local attributes = player:GetAttributes()
-        for attrName, _ in pairs(attributes) do
-            if attrName:find("^CyberConfig_") then
-                local configName = attrName:gsub("^CyberConfig_", "")
-                if not table.find(configs, configName) then
-                    table.insert(configs, configName)
-                end
-            end
-        end
-    end)
-    
-    -- Adiciona sempre a config "default" à lista
-    if not table.find(configs, "default") then
-        table.insert(configs, "default")
-    end
-    
-    table.sort(configs)
-    return configs
-end
-
--- Função para criar uma config padrão se não existir nenhuma
-local function createDefaultConfigIfNeeded()
-    local configs = getConfigList()
-    
-    if not table.find(configs, "default") then
-        print("[Config] Creating default config...")
-        local success, message = createConfig("default")
-        if success then
-            print("[Config] Default config created successfully")
-        else
-            print("[Config] Failed to create default config: " .. message)
-        end
-    else
-        print("[Config] Default config already exists")
-    end
-end
-
--- Auto-load ao iniciar
-local function autoLoadConfig()
-    createDefaultConfigIfNeeded()
-    
-    if CONFIG_SYSTEM.AUTO_LOAD_CONFIG and CONFIG_SYSTEM.AUTO_LOAD_CONFIG ~= "" then
-        local success, message = loadConfig(CONFIG_SYSTEM.AUTO_LOAD_CONFIG)
-        if not success then
-            -- Se não conseguir, tenta carregar "default"
-            if CONFIG_SYSTEM.AUTO_LOAD_CONFIG ~= "default" then
-                loadConfig("default")
-            end
-        else
-            print("[Config] Auto-loaded: " .. CONFIG_SYSTEM.AUTO_LOAD_CONFIG)
-        end
-    end
-end
-
 -- ===== CACHE =====
 local Vector3_new = Vector3.new
 local Vector3_zero = Vector3.zero
@@ -463,7 +40,7 @@ local Color3_black = Color3.new(0,0,0)
 -- ===== STATE =====
 local state = {
 	autofarmEnabled = false,
-	autofarmMode = "Behind", -- "Behind" or "Above"
+	autofarmMode = "Above", -- "Behind" or "Above" (ALTERADO PARA "Above" POR PADRÃO)
 	autofarmDistance = 8, -- distância entre player e NPC (Behind = atrás, Above = altura) - alterável por slider
 	infiniteJumpEnabled = false,
 	speedEnabled = false,
@@ -494,7 +71,25 @@ local state = {
 	tracerLines = {},
 	healthBarObjects = {},
 	isTeleporting = false,
-	teleportNPCList = {}
+	teleportNPCList = {},
+	
+	-- Novo sistema de keybinds
+	keybinds = {
+		autofarm = Enum.KeyCode.F3, -- F3 para autofarm (por padrão)
+		speedBoost = nil,
+		infiniteJump = nil,
+		m1Macro = Enum.KeyCode.F2,
+		lockOn = nil,
+		esp = nil,
+		tracers = nil,
+		healthBars = nil,
+		playerESP = nil,
+		fov = nil,
+		noClip = nil
+	},
+	
+	-- Estado de configuração de keybinds
+	settingKeybind = nil
 }
 
 -- Additional global states
@@ -506,6 +101,131 @@ local fovCircle = nil
 
 -- ===== TOGGLE FUNCTIONS TABLE =====
 local toggleUpdateFunctions = {}
+
+-- ===== KEYBIND SYSTEM =====
+local keybindButtons = {} -- Para armazenar referências aos botões de keybind
+
+local function getKeyName(keyCode)
+	if keyCode == nil then return "Press Key" end
+	local keyName = tostring(keyCode):gsub("Enum.KeyCode.", "")
+	return keyName
+end
+
+local function createKeybindButton(parent, labelText, keybindType)
+	local container = Instance.new("Frame")
+	container.Size = UDim2_new(1, 0, 0, 40)
+	container.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
+	container.BorderSizePixel = 0
+	container.Parent = parent
+	
+	local containerCorner = Instance.new("UICorner")
+	containerCorner.CornerRadius = UDim.new(0, 6)
+	containerCorner.Parent = container
+	
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2_new(0.6, -10, 1, 0)
+	label.Position = UDim2_new(0, 10, 0, 0)
+	label.BackgroundTransparency = 1
+	label.Text = labelText
+	label.Font = Enum.Font.Gotham
+	label.TextSize = 12
+	label.TextColor3 = Color3_white
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = container
+	
+	local keybindBtn = Instance.new("TextButton")
+	keybindBtn.Name = keybindType
+	keybindBtn.Size = UDim2_new(0, 70, 0, 25)
+	keybindBtn.Position = UDim2_new(1, -75, 0.5, -12.5)
+	keybindBtn.BackgroundColor3 = Color3_fromRGB(35, 35, 50)
+	keybindBtn.Text = getKeyName(state.keybinds[keybindType])
+	keybindBtn.Font = Enum.Font.GothamBold
+	keybindBtn.TextSize = 10
+	keybindBtn.TextColor3 = Color3_fromRGB(200, 200, 220)
+	keybindBtn.BorderSizePixel = 0
+	keybindBtn.AutoButtonColor = false
+	keybindBtn.Parent = container
+	
+	local keybindBtnCorner = Instance.new("UICorner")
+	keybindBtnCorner.CornerRadius = UDim.new(0, 4)
+	keybindBtnCorner.Parent = keybindBtn
+	
+	-- Armazena referência para atualização
+	keybindButtons[keybindType] = keybindBtn
+	
+	return container, keybindBtn
+end
+
+local function updateKeybindVisual(keybindType)
+	if keybindButtons[keybindType] then
+		keybindButtons[keybindType].Text = getKeyName(state.keybinds[keybindType])
+		
+		if state.settingKeybind == keybindType then
+			keybindButtons[keybindType].BackgroundColor3 = Color3_fromRGB(100, 180, 255)
+			keybindButtons[keybindType].Text = "Press Key..."
+		else
+			keybindButtons[keybindType].BackgroundColor3 = state.keybinds[keybindType] and Color3_fromRGB(35, 35, 50) or Color3_fromRGB(25, 25, 40)
+		end
+	end
+end
+
+local function startKeybindSetting(keybindType)
+	-- Cancela configuração anterior se houver
+	if state.settingKeybind then
+		updateKeybindVisual(state.settingKeybind)
+	end
+	
+	state.settingKeybind = keybindType
+	updateKeybindVisual(keybindType)
+end
+
+local function setKeybind(keybindType, keyCode)
+	state.keybinds[keybindType] = keyCode
+	state.settingKeybind = nil
+	updateKeybindVisual(keybindType)
+end
+
+local function handleKeybindInput(input, processed)
+	if processed then return end
+	
+	-- Se estiver configurando um keybind
+	if state.settingKeybind then
+		if input.UserInputType == Enum.UserInputType.Keyboard then
+			setKeybind(state.settingKeybind, input.KeyCode)
+		end
+		return
+	end
+	
+	-- Executa keybinds se não estiver configurando
+	for keybindType, keyCode in pairs(state.keybinds) do
+		if keyCode and input.KeyCode == keyCode then
+			-- Toggle das features correspondentes
+			if keybindType == "autofarm" then
+				toggleUpdateFunctions.autofarm(not state.autofarmEnabled)
+			elseif keybindType == "speedBoost" then
+				toggleUpdateFunctions.speed(not state.speedEnabled)
+			elseif keybindType == "infiniteJump" then
+				toggleUpdateFunctions.infiniteJump(not state.infiniteJumpEnabled)
+			elseif keybindType == "m1Macro" then
+				toggleUpdateFunctions.m1Macro(not state.m1MacroEnabled)
+			elseif keybindType == "lockOn" then
+				toggleUpdateFunctions.lockOn(not state.lockOnEnabled)
+			elseif keybindType == "esp" then
+				toggleUpdateFunctions.esp(not state.espEnabled)
+			elseif keybindType == "tracers" then
+				toggleUpdateFunctions.tracers(not state.tracersEnabled)
+			elseif keybindType == "healthBars" then
+				toggleUpdateFunctions.healthBars(not state.healthBarsEnabled)
+			elseif keybindType == "playerESP" then
+				toggleUpdateFunctions.playerESP(not playerESPEnabled)
+			elseif keybindType == "fov" then
+				toggleUpdateFunctions.fov(not fovEnabled)
+			elseif keybindType == "noClip" then
+				toggleUpdateFunctions.noClip(not noClipEnabled)
+			end
+		end
+	end
+end
 
 -- ===== UTILS =====
 local function disconnectConnection(name)
@@ -1101,8 +821,8 @@ screenGui.Parent = CoreGui
 
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2_new(0, 320, 0, 450)
-mainFrame.Position = UDim2_new(0, 20, 0.5, -225)
+mainFrame.Size = UDim2_new(0, 320, 0, 520) -- Aumentado para acomodar keybinds
+mainFrame.Position = UDim2_new(0, 20, 0.5, -260)
 mainFrame.BackgroundColor3 = Color3_fromRGB(13, 13, 18)
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
@@ -1239,7 +959,7 @@ local combatBtn = createSidebarBtn("⚔", "CombatBtn")
 local visualBtn = createSidebarBtn("👁", "VisualBtn")
 local teleportBtn = createSidebarBtn("📍", "TeleportBtn")
 local miscBtn = createSidebarBtn("🔧", "MiscBtn")
-local configBtn = createSidebarBtn("⚙", "ConfigBtn")
+local keybindsBtn = createSidebarBtn("⌨️", "KeybindsBtn") -- Novo botão para keybinds
 
 local contentArea = Instance.new("Frame")
 contentArea.Name = "ContentArea"
@@ -1277,14 +997,14 @@ local combatPage = createPage("CombatPage")
 local visualPage = createPage("VisualPage")
 local teleportPage = createPage("TeleportPage")
 local miscPage = createPage("MiscPage")
-local configPage = createPage("ConfigPage")
+local keybindsPage = createPage("KeybindsPage") -- Nova página para keybinds
 
 local function switchPage(page, btn)
 	combatPage.Visible = false
 	visualPage.Visible = false
 	teleportPage.Visible = false
 	miscPage.Visible = false
-	configPage.Visible = false
+	keybindsPage.Visible = false
 	
 	combatBtn.BackgroundColor3 = Color3_fromRGB(22, 22, 30)
 	combatBtn.TextColor3 = Color3_fromRGB(120, 120, 140)
@@ -1294,8 +1014,8 @@ local function switchPage(page, btn)
 	teleportBtn.TextColor3 = Color3_fromRGB(120, 120, 140)
 	miscBtn.BackgroundColor3 = Color3_fromRGB(22, 22, 30)
 	miscBtn.TextColor3 = Color3_fromRGB(120, 120, 140)
-	configBtn.BackgroundColor3 = Color3_fromRGB(22, 22, 30)
-	configBtn.TextColor3 = Color3_fromRGB(120, 120, 140)
+	keybindsBtn.BackgroundColor3 = Color3_fromRGB(22, 22, 30)
+	keybindsBtn.TextColor3 = Color3_fromRGB(120, 120, 140)
 	
 	page.Visible = true
 	btn.BackgroundColor3 = Color3_fromRGB(100, 180, 255)
@@ -1318,8 +1038,8 @@ miscBtn.MouseButton1Click:Connect(function()
 	switchPage(miscPage, miscBtn)
 end)
 
-configBtn.MouseButton1Click:Connect(function()
-	switchPage(configPage, configBtn)
+keybindsBtn.MouseButton1Click:Connect(function()
+	switchPage(keybindsPage, keybindsBtn)
 end)
 
 switchPage(combatPage, combatBtn)
@@ -1509,7 +1229,7 @@ local function createButton(parent, text, color)
 	return btn
 end
 
-local function createInput(parent, labelText, placeholder, defaultText)
+local function createDropdown(parent, labelText, options, defaultOption)
 	local container = Instance.new("Frame")
 	container.Size = UDim2_new(1, 0, 0, 50)
 	container.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
@@ -1531,261 +1251,91 @@ local function createInput(parent, labelText, placeholder, defaultText)
 	label.TextXAlignment = Enum.TextXAlignment.Left
 	label.Parent = container
 	
-	local input = Instance.new("TextBox")
-	input.Size = UDim2_new(1, -20, 0, 22)
-	input.Position = UDim2_new(0, 10, 0, 24)
-	input.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
-	input.Text = defaultText or ""
-	input.PlaceholderText = placeholder or ""
-	input.Font = Enum.Font.Gotham
-	input.TextSize = 11
-	input.TextColor3 = Color3_white
-	input.ClearTextOnFocus = false
-	input.BorderSizePixel = 0
-	input.Parent = container
+	local dropdown = Instance.new("TextButton")
+	dropdown.Size = UDim2_new(1, -20, 0, 22)
+	dropdown.Position = UDim2_new(0, 10, 0, 24)
+	dropdown.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
+	dropdown.Text = defaultOption .. "  ▼"
+	dropdown.Font = Enum.Font.Gotham
+	dropdown.TextSize = 11
+	dropdown.TextColor3 = Color3_white
+	dropdown.BorderSizePixel = 0
+	dropdown.Parent = container
 	
-	local inputCorner = Instance.new("UICorner")
-	inputCorner.CornerRadius = UDim.new(0, 4)
-	inputCorner.Parent = input
+	local dropdownCorner = Instance.new("UICorner")
+	dropdownCorner.CornerRadius = UDim.new(0, 4)
+	dropdownCorner.Parent = dropdown
 	
-	local inputPadding = Instance.new("UIPadding")
-	inputPadding.PaddingLeft = UDim.new(0, 8)
-	inputPadding.Parent = input
+	local dropdownPadding = Instance.new("UIPadding")
+	dropdownPadding.PaddingLeft = UDim.new(0, 8)
+	dropdownPadding.Parent = dropdown
 	
-	return container, input
-end
-
--- ===== CONFIG PAGE =====
-createSectionHeader(configPage, "Config System")
-
-local configInfoContainer = Instance.new("Frame")
-configInfoContainer.Size = UDim2_new(1, 0, 0, 60)
-configInfoContainer.BackgroundColor3 = Color3_fromRGB(100, 180, 255)
-configInfoContainer.BackgroundTransparency = 0.9
-configInfoContainer.BorderSizePixel = 0
-configInfoContainer.Parent = configPage
-
-local configInfoCorner = Instance.new("UICorner")
-configInfoCorner.CornerRadius = UDim.new(0, 6)
-configInfoCorner.Parent = configInfoContainer
-
-local configInfoLabel = Instance.new("TextLabel")
-configInfoLabel.Size = UDim2_new(1, -20, 1, 0)
-configInfoLabel.Position = UDim2_new(0, 10, 0, 0)
-configInfoLabel.BackgroundTransparency = 1
-configInfoLabel.Text = "⚙️ Config System\nSave and load your settings\nAuto-saves on exit"
-configInfoLabel.Font = Enum.Font.Gotham
-configInfoLabel.TextSize = 10
-configInfoLabel.TextColor3 = Color3_white
-configInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
-configInfoLabel.TextWrapped = true
-configInfoLabel.Parent = configInfoContainer
-
--- Input para nome da config
-local configNameInputContainer, configNameInput = createInput(
-	configPage,
-	"Config Name",
-	"Enter config name (default, pvp, farm, etc)",
-	"default"
-)
-
--- Botões de ação
-local createConfigBtn = createButton(configPage, "💾 Create New Config", Color3_fromRGB(80, 200, 120))
-local loadConfigBtn = createButton(configPage, "📂 Load Config", Color3_fromRGB(100, 180, 255))
-local overwriteConfigBtn = createButton(configPage, "✏️ Overwrite Config", Color3_fromRGB(255, 180, 80))
-local refreshConfigBtn = createButton(configPage, "🔄 Refresh Config List", Color3_fromRGB(80, 120, 200))
-
--- Lista de configs
-local configListContainer = Instance.new("Frame")
-configListContainer.Name = "ConfigListContainer"
-configListContainer.Size = UDim2_new(1, 0, 0, 0)
-configListContainer.AutomaticSize = Enum.AutomaticSize.Y
-configListContainer.BackgroundTransparency = 1
-configListContainer.Parent = configPage
-
-local configListLayout = Instance.new("UIListLayout")
-configListLayout.Padding = UDim.new(0, 5)
-configListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-configListLayout.Parent = configListContainer
-
--- Função para atualizar a lista de configs
-local function populateConfigList()
-	for _, child in ipairs(configListContainer:GetChildren()) do
-		if child:IsA("TextButton") or child:IsA("TextLabel") then
-			child:Destroy()
+	local optionsFrame = Instance.new("ScrollingFrame")
+	optionsFrame.Name = "OptionsFrame"
+	optionsFrame.Size = UDim2_new(1, -20, 0, math.min(#options * 25, 100))
+	optionsFrame.Position = UDim2_new(0, 10, 0, 48)
+	optionsFrame.BackgroundColor3 = Color3_fromRGB(20, 20, 28)
+	optionsFrame.BorderSizePixel = 0
+	optionsFrame.ScrollBarThickness = 3
+	optionsFrame.ScrollBarImageColor3 = Color3_fromRGB(80, 80, 100)
+	optionsFrame.Visible = false
+	optionsFrame.ZIndex = 10
+	optionsFrame.Parent = container
+	
+	local optionsCorner = Instance.new("UICorner")
+	optionsCorner.CornerRadius = UDim.new(0, 4)
+	optionsCorner.Parent = optionsFrame
+	
+	local optionsLayout = Instance.new("UIListLayout")
+	optionsLayout.Padding = UDim.new(0, 2)
+	optionsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	optionsLayout.Parent = optionsFrame
+	
+	for _, option in ipairs(options) do
+		local optionBtn = Instance.new("TextButton")
+		optionBtn.Size = UDim2_new(1, 0, 0, 23)
+		optionBtn.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
+		optionBtn.Text = option
+		optionBtn.Font = Enum.Font.Gotham
+		optionBtn.TextSize = 10
+		optionBtn.TextColor3 = Color3_white
+		optionBtn.BorderSizePixel = 0
+		optionBtn.AutoButtonColor = false
+		optionBtn.Parent = optionsFrame
+		
+		optionBtn.MouseEnter:Connect(function()
+			optionBtn.BackgroundColor3 = Color3_fromRGB(35, 35, 45)
+		end)
+		
+		optionBtn.MouseLeave:Connect(function()
+			optionBtn.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
+		end)
+		
+		optionBtn.MouseButton1Click:Connect(function()
+			dropdown.Text = option .. "  ▼"
+			optionsFrame.Visible = false
+			container.Size = UDim2_new(1, 0, 0, 50)
+			
+			-- Atualizar o estado
+			if labelText == "Farm Position" then
+				state.autofarmMode = option
+			end
+		end)
+	end
+	
+	optionsFrame.CanvasSize = UDim2.new(0, 0, 0, #options * 25)
+	
+	dropdown.MouseButton1Click:Connect(function()
+		optionsFrame.Visible = not optionsFrame.Visible
+		if optionsFrame.Visible then
+			container.Size = UDim2_new(1, 0, 0, 50 + math.min(#options * 25, 100) + 5)
+		else
+			container.Size = UDim2_new(1, 0, 0, 50)
 		end
-	end
+	end)
 	
-	local configs = getConfigList()
-	
-	if #configs == 0 then
-		local noConfigsLabel = Instance.new("TextLabel")
-		noConfigsLabel.Size = UDim2_new(1, 0, 0, 40)
-		noConfigsLabel.BackgroundTransparency = 1
-		noConfigsLabel.Text = "No configs found. Create one!"
-		noConfigsLabel.Font = Enum.Font.Gotham
-		noConfigsLabel.TextSize = 11
-		noConfigsLabel.TextColor3 = Color3_fromRGB(120, 120, 140)
-		noConfigsLabel.Parent = configListContainer
-		
-		-- Botão para criar config padrão
-		local createDefaultBtn = Instance.new("TextButton")
-		createDefaultBtn.Size = UDim2_new(1, 0, 0, 35)
-		createDefaultBtn.BackgroundColor3 = Color3_fromRGB(80, 200, 120)
-		createDefaultBtn.Text = "✨ Create Default Config"
-		createDefaultBtn.Font = Enum.Font.GothamBold
-		createDefaultBtn.TextSize = 11
-		createDefaultBtn.TextColor3 = Color3_white
-		createDefaultBtn.BorderSizePixel = 0
-		createDefaultBtn.AutoButtonColor = false
-		createDefaultBtn.Parent = configListContainer
-		
-		local btnCorner = Instance.new("UICorner")
-		btnCorner.CornerRadius = UDim.new(0, 6)
-		btnCorner.Parent = createDefaultBtn
-		
-		createDefaultBtn.MouseButton1Click:Connect(function()
-			local success, message = createConfig("default")
-			if success then
-				createDefaultBtn.BackgroundColor3 = Color3_fromRGB(80, 200, 120)
-				createDefaultBtn.Text = "✅ Default config created!"
-				task.wait(1)
-				createDefaultBtn.Text = "✨ Create Default Config"
-				populateConfigList()
-			else
-				createDefaultBtn.BackgroundColor3 = Color3_fromRGB(200, 50, 50)
-				createDefaultBtn.Text = "❌ Failed: " .. message
-				task.wait(1)
-				createDefaultBtn.BackgroundColor3 = Color3_fromRGB(80, 200, 120)
-				createDefaultBtn.Text = "✨ Create Default Config"
-			end
-		end)
-		
-		return
-	end
-	
-	for _, configName in ipairs(configs) do
-		local configBtn = Instance.new("TextButton")
-		configBtn.Size = UDim2_new(1, 0, 0, 32)
-		configBtn.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
-		configBtn.Text = "   📁 " .. configName
-		configBtn.Font = Enum.Font.Gotham
-		configBtn.TextSize = 11
-		configBtn.TextColor3 = Color3_white
-		configBtn.TextXAlignment = Enum.TextXAlignment.Left
-		configBtn.BorderSizePixel = 0
-		configBtn.AutoButtonColor = false
-		configBtn.Parent = configListContainer
-		
-		local configBtnCorner = Instance.new("UICorner")
-		configBtnCorner.CornerRadius = UDim.new(0, 6)
-		configBtnCorner.Parent = configBtn
-		
-		configBtn.MouseEnter:Connect(function()
-			configBtn.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
-		end)
-		
-		configBtn.MouseLeave:Connect(function()
-			configBtn.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
-		end)
-		
-		configBtn.MouseButton1Click:Connect(function()
-			configNameInput.Text = configName
-		end)
-		
-		configBtn.MouseButton2Click:Connect(function()
-			-- Botão direito para load rápido
-			local success, message = loadConfig(configName)
-			if success then
-				configBtn.BackgroundColor3 = Color3_fromRGB(80, 200, 120)
-				task.wait(0.3)
-				configBtn.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
-			else
-				configBtn.BackgroundColor3 = Color3_fromRGB(200, 50, 50)
-				task.wait(0.3)
-				configBtn.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
-			end
-		end)
-	end
+	return container, dropdown
 end
-
--- Conectar botões
-createConfigBtn.MouseButton1Click:Connect(function()
-	local configName = configNameInput.Text:gsub("%s+", "_"):gsub("[^%w_%-%.]", "")
-	if configName == "" then
-		configName = "default"
-	end
-	
-	local success, message = createConfig(configName)
-	
-	if success then
-		createConfigBtn.BackgroundColor3 = Color3_fromRGB(80, 200, 120)
-		createConfigBtn.Text = "✅ " .. message
-		task.wait(1)
-		createConfigBtn.BackgroundColor3 = Color3_fromRGB(80, 200, 120)
-		createConfigBtn.Text = "💾 Create New Config"
-		populateConfigList()
-	else
-		createConfigBtn.BackgroundColor3 = Color3_fromRGB(200, 50, 50)
-		createConfigBtn.Text = "❌ " .. message
-		task.wait(1)
-		createConfigBtn.BackgroundColor3 = Color3_fromRGB(80, 200, 120)
-		createConfigBtn.Text = "💾 Create New Config"
-	end
-end)
-
-loadConfigBtn.MouseButton1Click:Connect(function()
-	local configName = configNameInput.Text:gsub("%s+", "_"):gsub("[^%w_%-%.]", "")
-	if configName == "" then
-		configName = "default"
-	end
-	
-	local success, message = loadConfig(configName)
-	
-	if success then
-		loadConfigBtn.BackgroundColor3 = Color3_fromRGB(80, 200, 120)
-		loadConfigBtn.Text = "✅ " .. message
-		task.wait(1)
-		loadConfigBtn.BackgroundColor3 = Color3_fromRGB(100, 180, 255)
-		loadConfigBtn.Text = "📂 Load Config"
-	else
-		loadConfigBtn.BackgroundColor3 = Color3_fromRGB(200, 50, 50)
-		loadConfigBtn.Text = "❌ " .. message
-		task.wait(1)
-		loadConfigBtn.BackgroundColor3 = Color3_fromRGB(100, 180, 255)
-		loadConfigBtn.Text = "📂 Load Config"
-	end
-end)
-
-overwriteConfigBtn.MouseButton1Click:Connect(function()
-	local configName = configNameInput.Text:gsub("%s+", "_"):gsub("[^%w_%-%.]", "")
-	if configName == "" then
-		configName = "default"
-	end
-	
-	local success, message = overwriteConfig(configName)
-	
-	if success then
-		overwriteConfigBtn.BackgroundColor3 = Color3_fromRGB(80, 200, 120)
-		overwriteConfigBtn.Text = "✅ " .. message
-		task.wait(1)
-		overwriteConfigBtn.BackgroundColor3 = Color3_fromRGB(255, 180, 80)
-		overwriteConfigBtn.Text = "✏️ Overwrite Config"
-	else
-		overwriteConfigBtn.BackgroundColor3 = Color3_fromRGB(200, 50, 50)
-		overwriteConfigBtn.Text = "❌ " .. message
-		task.wait(1)
-		overwriteConfigBtn.BackgroundColor3 = Color3_fromRGB(255, 180, 80)
-		overwriteConfigBtn.Text = "✏️ Overwrite Config"
-	end
-end)
-
-refreshConfigBtn.MouseButton1Click:Connect(function()
-	populateConfigList()
-	refreshConfigBtn.BackgroundColor3 = Color3_fromRGB(80, 200, 120)
-	task.wait(0.3)
-	refreshConfigBtn.BackgroundColor3 = Color3_fromRGB(80, 120, 200)
-end)
 
 -- ===== COMBAT PAGE =====
 createSectionHeader(combatPage, "Auto Farm Settings")
@@ -1840,11 +1390,11 @@ local farmModeBehindBtn = Instance.new("TextButton")
 farmModeBehindBtn.Name = "Option_Behind"
 farmModeBehindBtn.LayoutOrder = 1
 farmModeBehindBtn.Size = UDim2_new(0, 130, 0, 28)
-farmModeBehindBtn.BackgroundColor3 = Color3_fromRGB(100, 180, 255)
+farmModeBehindBtn.BackgroundColor3 = Color3_fromRGB(40, 40, 55) -- Alterado: Above é padrão
 farmModeBehindBtn.Text = "Behind"
 farmModeBehindBtn.Font = Enum.Font.GothamBold
 farmModeBehindBtn.TextSize = 11
-farmModeBehindBtn.TextColor3 = Color3_white
+farmModeBehindBtn.TextColor3 = Color3_fromRGB(180, 180, 200) -- Alterado: Above é padrão
 farmModeBehindBtn.BorderSizePixel = 0
 farmModeBehindBtn.AutoButtonColor = false
 farmModeBehindBtn.Parent = farmModeButtonsFrame
@@ -1857,11 +1407,11 @@ local farmModeAboveBtn = Instance.new("TextButton")
 farmModeAboveBtn.Name = "Option_Above"
 farmModeAboveBtn.LayoutOrder = 2
 farmModeAboveBtn.Size = UDim2_new(0, 130, 0, 28)
-farmModeAboveBtn.BackgroundColor3 = Color3_fromRGB(40, 40, 55)
+farmModeAboveBtn.BackgroundColor3 = Color3_fromRGB(100, 180, 255) -- Alterado: Above é padrão
 farmModeAboveBtn.Text = "Above"
 farmModeAboveBtn.Font = Enum.Font.GothamBold
 farmModeAboveBtn.TextSize = 11
-farmModeAboveBtn.TextColor3 = Color3_fromRGB(180, 180, 200)
+farmModeAboveBtn.TextColor3 = Color3_white -- Alterado: Above é padrão
 farmModeAboveBtn.BorderSizePixel = 0
 farmModeAboveBtn.AutoButtonColor = false
 farmModeAboveBtn.Parent = farmModeButtonsFrame
@@ -1904,8 +1454,6 @@ end)
 farmModeAboveBtn.MouseLeave:Connect(function()
 	updateFarmPositionVisuals()
 end)
-
-updateFarmPositionVisuals()
 
 -- Slider: distância entre player e NPC no autofarm (Behind = atrás, Above = altura) - altera em tempo real
 local autofarmDistContainer, autofarmDistSliderBtn, autofarmDistSliderFill, autofarmDistValueLabel, autofarmDistMin, autofarmDistMax = createSlider(
@@ -2114,6 +1662,101 @@ local noClipContainer, noClipToggle, noClipBg, noClipCircle = createToggle(
 	noClipEnabled
 )
 
+-- ===== KEYBINDS PAGE =====
+createSectionHeader(keybindsPage, "Keybinds Configuration")
+
+-- Info text
+local keybindsInfoContainer = Instance.new("Frame")
+keybindsInfoContainer.Size = UDim2_new(1, 0, 0, 50)
+keybindsInfoContainer.BackgroundColor3 = Color3_fromRGB(100, 180, 255)
+keybindsInfoContainer.BackgroundTransparency = 0.9
+keybindsInfoContainer.BorderSizePixel = 0
+keybindsInfoContainer.Parent = keybindsPage
+
+local keybindsInfoCorner = Instance.new("UICorner")
+keybindsInfoCorner.CornerRadius = UDim.new(0, 6)
+keybindsInfoCorner.Parent = keybindsInfoContainer
+
+local keybindsInfoLabel = Instance.new("TextLabel")
+keybindsInfoLabel.Size = UDim2_new(1, -20, 1, 0)
+keybindsInfoLabel.Position = UDim2_new(0, 10, 0, 0)
+keybindsInfoLabel.BackgroundTransparency = 1
+keybindsInfoLabel.Text = "⌨️ Click 'Press Key' then press any key to bind\nPress ESC to clear binding\nF1: Toggle GUI | F2: M1 Macro | F3: Auto Farm"
+keybindsInfoLabel.Font = Enum.Font.Gotham
+keybindsInfoLabel.TextSize = 10
+keybindsInfoLabel.TextColor3 = Color3_white
+keybindsInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
+keybindsInfoLabel.TextWrapped = true
+keybindsInfoLabel.Parent = keybindsInfoContainer
+
+-- Criar botões de keybind para todas as features
+createSectionHeader(keybindsPage, "Combat Keybinds")
+local autofarmKeybindContainer, autofarmKeybindBtn = createKeybindButton(keybindsPage, "Auto Farm", "autofarm")
+local m1MacroKeybindContainer, m1MacroKeybindBtn = createKeybindButton(keybindsPage, "M1 Macro", "m1Macro")
+local lockOnKeybindContainer, lockOnKeybindBtn = createKeybindButton(keybindsPage, "Lock On", "lockOn")
+
+createSectionHeader(keybindsPage, "Movement Keybinds")
+local speedKeybindContainer, speedKeybindBtn = createKeybindButton(keybindsPage, "Speed Boost", "speedBoost")
+local jumpKeybindContainer, jumpKeybindBtn = createKeybindButton(keybindsPage, "Infinite Jump", "infiniteJump")
+local noClipKeybindContainer, noClipKeybindBtn = createKeybindButton(keybindsPage, "No Clip", "noClip")
+
+createSectionHeader(keybindsPage, "Visual Keybinds")
+local espKeybindContainer, espKeybindBtn = createKeybindButton(keybindsPage, "ESP", "esp")
+local tracersKeybindContainer, tracersKeybindBtn = createKeybindButton(keybindsPage, "Tracers", "tracers")
+local healthBarsKeybindContainer, healthBarsKeybindBtn = createKeybindButton(keybindsPage, "Health Bars", "healthBars")
+local playerESPKeybindContainer, playerESPKeybindBtn = createKeybindButton(keybindsPage, "Player ESP", "playerESP")
+local fovKeybindContainer, fovKeybindBtn = createKeybindButton(keybindsPage, "FOV Circle", "fov")
+
+-- Conectar botões de keybind
+autofarmKeybindBtn.MouseButton1Click:Connect(function()
+	startKeybindSetting("autofarm")
+end)
+
+m1MacroKeybindBtn.MouseButton1Click:Connect(function()
+	startKeybindSetting("m1Macro")
+end)
+
+lockOnKeybindBtn.MouseButton1Click:Connect(function()
+	startKeybindSetting("lockOn")
+end)
+
+speedKeybindBtn.MouseButton1Click:Connect(function()
+	startKeybindSetting("speedBoost")
+end)
+
+jumpKeybindBtn.MouseButton1Click:Connect(function()
+	startKeybindSetting("infiniteJump")
+end)
+
+noClipKeybindBtn.MouseButton1Click:Connect(function()
+	startKeybindSetting("noClip")
+end)
+
+espKeybindBtn.MouseButton1Click:Connect(function()
+	startKeybindSetting("esp")
+end)
+
+tracersKeybindBtn.MouseButton1Click:Connect(function()
+	startKeybindSetting("tracers")
+end)
+
+healthBarsKeybindBtn.MouseButton1Click:Connect(function()
+	startKeybindSetting("healthBars")
+end)
+
+playerESPKeybindBtn.MouseButton1Click:Connect(function()
+	startKeybindSetting("playerESP")
+end)
+
+fovKeybindBtn.MouseButton1Click:Connect(function()
+	startKeybindSetting("fov")
+end)
+
+-- Atualizar visualização inicial
+for keybindType, _ in pairs(state.keybinds) do
+	updateKeybindVisual(keybindType)
+end
+
 -- ===== TOGGLE FUNCTIONS =====
 toggleUpdateFunctions.autofarm = function(enabled)
 	state.autofarmEnabled = enabled
@@ -2195,6 +1838,11 @@ UserInputService.InputEnded:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
 		m1Dragging = false
 		autofarmDistDragging = false
+	end
+	
+	-- Tratar ESC para cancelar keybind
+	if state.settingKeybind and input.KeyCode == Enum.KeyCode.Escape then
+		setKeybind(state.settingKeybind, nil)
 	end
 end)
 
@@ -2430,15 +2078,18 @@ end)
 
 UserInputService.InputBegan:Connect(function(input, processed)
 	if processed then return end
-
+	
+	-- Tratar keybinds primeiro
+	handleKeybindInput(input, processed)
+	
+	-- Hotkeys padrão
 	if input.KeyCode == Enum.KeyCode.F1 then
 		state.guiVisible = not state.guiVisible
 		mainFrame.Visible = state.guiVisible
 	end
-
-	if input.KeyCode == Enum.KeyCode.F2 then
-		toggleUpdateFunctions.m1Macro(not state.m1MacroEnabled)
-	end
+	
+	-- F2 já é tratado pelo sistema de keybinds (m1Macro)
+	-- F3 já é tratado pelo sistema de keybinds (autofarm)
 end)
 
 -- ===== CHARACTER EVENTS =====
@@ -2466,31 +2117,9 @@ screenGui.Destroying:Connect(function()
 	for player, esp in pairs(playerESPObjects) do
 		if esp then esp:Destroy() end
 	end
-	
-	-- Salvar config automaticamente se habilitado
-	if CONFIG_SYSTEM.AUTO_SAVE then
-		overwriteConfig("default")
-	end
 end)
 
 -- ===== STARTUP =====
--- Criar config padrão e carregar automaticamente
-task.spawn(function()
-	task.wait(0.5) -- Esperar GUI carregar
-	createDefaultConfigIfNeeded()
-	autoLoadConfig()
-	populateConfigList()
-	
-	-- Feedback no console
-	print("═══════════════════════════════════════════════")
-	print("        CONFIG SYSTEM INITIALIZED")
-	print("═══════════════════════════════════════════════")
-	print("  Default config: Created/Loaded")
-	print("  Storage: " .. (hasFileSystem and "File System" or "LocalStorage"))
-	print("  Auto-load: " .. CONFIG_SYSTEM.AUTO_LOAD_CONFIG)
-	print("═══════════════════════════════════════════════")
-end)
-
 print("═══════════════════════════════════════════════")
 print("        CYBER HUB - FFRE EDITION V4.3")
 print("═══════════════════════════════════════════════")
@@ -2499,7 +2128,8 @@ print("  🎯  Lock On | M1 Macro")
 print("  🚀  Movement: Speed | Infinite Jump | No Clip")
 print("  👁️  Visual: ESP | Tracers | Health Bars")
 print("  📍  Teleport: Ultra Smooth (Anti-Kick)")
-print("  ⚙️  Config System: Save/Load Settings")
+print("  ⌨️  Keybinds: All features bindable")
 print("═══════════════════════════════════════════════")
-print("  F1 - Toggle GUI | F2 - Toggle M1 Macro")
+print("  F1 - Toggle GUI | F2 - M1 Macro | F3 - Auto Farm")
+print("  Configure all keybinds in the Keybinds tab")
 print("═══════════════════════════════════════════════")
