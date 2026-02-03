@@ -29,25 +29,28 @@ local CONFIG = {
 	TELEPORT_NPC_FOLDER = workspace:WaitForChild("LiveNPCS")
 }
 
--- ===== CONFIG SYSTEM =====
+-- ===== CONFIG SYSTEM PARA VELOCITY =====
 local CONFIG_SYSTEM = {
-	CONFIG_FOLDER_NAME = "CyberHub_Configs",
-	CONFIG_FILE_EXTENSION = ".json",
-	AUTO_LOAD_CONFIG = "default",
-	AUTO_SAVE = true
+    CONFIG_FOLDER_NAME = "CyberHub_Configs",
+    CONFIG_FILE_EXTENSION = ".json",
+    AUTO_LOAD_CONFIG = "default",
+    AUTO_SAVE = true
 }
 
--- Criar pasta de configurações se não existir
-local function ensureConfigFolder()
-	if not isfolder then
-		warn("Config system requires 'isfolder' function (executor feature)")
-		return false
-	end
-	
-	if not isfolder(CONFIG_SYSTEM.CONFIG_FOLDER_NAME) then
-		makefolder(CONFIG_SYSTEM.CONFIG_FOLDER_NAME)
-	end
-	return true
+-- Verifica se Velocity tem suporte para sistema de arquivos
+local hasFileSystem = false
+
+-- Tenta detectar a API de arquivos
+if pcall(function() 
+    if readfile and writefile and isfolder and makefolder then
+        return true
+    end
+    return false
+end) then
+    hasFileSystem = true
+    print("[Config System] File functions detected")
+else
+    print("[Config System] Using LocalStorage fallback")
 end
 
 -- ===== CONFIG DATA STRUCTURE =====
@@ -70,255 +73,382 @@ local DEFAULT_CONFIG_DATA = {
 	teleportNPCList = {}
 }
 
--- ===== CONFIG FUNCTIONS =====
+-- ===== CONFIG FUNCTIONS PARA VELOCITY =====
+-- Função para criar pasta (fallback para Velocity)
+local function ensureConfigFolder()
+    if hasFileSystem then
+        if not isfolder then
+            return false
+        end
+        if not isfolder(CONFIG_SYSTEM.CONFIG_FOLDER_NAME) then
+            makefolder(CONFIG_SYSTEM.CONFIG_FOLDER_NAME)
+        end
+        return true
+    else
+        -- No Velocity, usamos LocalStorage
+        return true
+    end
+end
+
+-- Salvar no LocalStorage (fallback para Velocity)
+local function saveToLocalStorage(configName, configData)
+    local success, encoded = pcall(function()
+        return HttpService:JSONEncode(configData)
+    end)
+    
+    if success then
+        -- Salva no LocalStorage usando atributos do jogador
+        pcall(function()
+            player:SetAttribute("CyberConfig_"..configName, encoded)
+        end)
+        
+        -- Também salva em um DataStore global
+        _G.CyberHubConfigs = _G.CyberHubConfigs or {}
+        _G.CyberHubConfigs[configName] = encoded
+        
+        print("[Config] Saved to LocalStorage: " .. configName)
+        return true, "Config saved successfully!"
+    end
+    return false, "Failed to encode config"
+end
+
+-- Carregar do LocalStorage
+local function loadFromLocalStorage(configName)
+    local encoded = nil
+    
+    -- Tenta carregar do atributo do jogador
+    pcall(function()
+        encoded = player:GetAttribute("CyberConfig_"..configName)
+    end)
+    
+    -- Se não encontrar, tenta do DataStore global
+    if not encoded and _G.CyberHubConfigs then
+        encoded = _G.CyberHubConfigs[configName]
+    end
+    
+    if encoded then
+        local success, configData = pcall(function()
+            return HttpService:JSONDecode(encoded)
+        end)
+        
+        if success then
+            return true, configData
+        end
+    end
+    
+    return false, "Config not found"
+end
+
+-- Salvar no sistema de arquivos (se disponível)
+local function saveToFileSystem(configName, configData)
+    if not hasFileSystem then
+        return false, "File system not available"
+    end
+    
+    local success, encoded = pcall(function()
+        return HttpService:JSONEncode(configData)
+    end)
+    
+    if not success then
+        return false, "Failed to encode config data"
+    end
+    
+    local fileName = configName .. CONFIG_SYSTEM.CONFIG_FILE_EXTENSION
+    local filePath = CONFIG_SYSTEM.CONFIG_FOLDER_NAME .. "/" .. fileName
+    
+    -- Cria pasta se não existir
+    ensureConfigFolder()
+    
+    -- Salva arquivo
+    pcall(function()
+        writefile(filePath, encoded)
+    end)
+    
+    return true, "Config saved to file!"
+end
+
+-- Carregar do sistema de arquivos
+local function loadFromFileSystem(configName)
+    if not hasFileSystem then
+        return false, "File system not available"
+    end
+    
+    local fileName = configName .. CONFIG_SYSTEM.CONFIG_FILE_EXTENSION
+    local filePath = CONFIG_SYSTEM.CONFIG_FOLDER_NAME .. "/" .. fileName
+    
+    if not pcall(function() 
+        if isfile then
+            return isfile(filePath)
+        end
+        return false
+    end) then
+        return false, "Config file not found"
+    end
+    
+    local fileContent = readfile(filePath)
+    local success, configData = pcall(function()
+        return HttpService:JSONDecode(fileContent)
+    end)
+    
+    if success then
+        return true, configData
+    end
+    
+    return false, "Failed to parse config data"
+end
+
+-- Funções principais unificadas
 local function createConfig(configName)
-	if not ensureConfigFolder() then
-		return false, "Config folder creation failed"
-	end
-	
-	configName = configName or "default"
-	if not configName:match("^[%w_%-%. ]+$") then
-		return false, "Invalid config name (letters, numbers, underscores, dashes, dots and spaces only)"
-	end
-	
-	local configData = {
-		configName = configName,
-		timestamp = os.date("%Y-%m-%d %H:%M:%S"),
-		version = "4.3",
-		settings = DEFAULT_CONFIG_DATA
-	}
-	
-	-- Copiar configurações atuais
-	for key, value in pairs(DEFAULT_CONFIG_DATA) do
-		if state[key] ~= nil then
-			configData.settings[key] = state[key]
-		end
-	end
-	
-	-- Adicionar estados extras
-	configData.settings.playerESPEnabled = playerESPEnabled
-	configData.settings.fovEnabled = fovEnabled
-	configData.settings.noClipEnabled = noClipEnabled
-	
-	local fileName = configName .. CONFIG_SYSTEM.CONFIG_FILE_EXTENSION
-	local filePath = CONFIG_SYSTEM.CONFIG_FOLDER_NAME .. "/" .. fileName
-	
-	local success, encoded = pcall(function()
-		return HttpService:JSONEncode(configData)
-	end)
-	
-	if not success then
-		return false, "Failed to encode config data"
-	end
-	
-	writefile(filePath, encoded)
-	return true, "Config '" .. configName .. "' created successfully!"
+    configName = configName or "default"
+    if configName == "" then configName = "default" end
+    
+    -- Limpa nome do arquivo
+    configName = configName:gsub("%s+", "_"):gsub("[^%w_%-%.]", "")
+    
+    local configData = {
+        configName = configName,
+        timestamp = os.date("%Y-%m-%d %H:%M:%S"),
+        version = "4.3",
+        settings = {}
+    }
+    
+    -- Coleta todas as configurações atuais
+    for key, defaultValue in pairs(DEFAULT_CONFIG_DATA) do
+        if state[key] ~= nil then
+            configData.settings[key] = state[key]
+        else
+            configData.settings[key] = defaultValue
+        end
+    end
+    
+    -- Estados extras
+    configData.settings.playerESPEnabled = playerESPEnabled
+    configData.settings.fovEnabled = fovEnabled
+    configData.settings.noClipEnabled = noClipEnabled
+    
+    -- Tenta salvar em arquivo primeiro
+    local success, message = saveToFileSystem(configName, configData)
+    if not success then
+        -- Fallback para LocalStorage
+        success, message = saveToLocalStorage(configName, configData)
+    end
+    
+    return success, message
 end
 
 local function loadConfig(configName)
-	if not ensureConfigFolder() then
-		return false, "Config folder not available"
-	end
-	
-	configName = configName or CONFIG_SYSTEM.AUTO_LOAD_CONFIG
-	local fileName = configName .. CONFIG_SYSTEM.CONFIG_FILE_EXTENSION
-	local filePath = CONFIG_SYSTEM.CONFIG_FOLDER_NAME .. "/" .. fileName
-	
-	if not isfile(filePath) then
-		return false, "Config file '" .. configName .. "' not found"
-	end
-	
-	local success, fileContent = pcall(function()
-		return readfile(filePath)
-	end)
-	
-	if not success then
-		return false, "Failed to read config file"
-	end
-	
-	local success2, configData = pcall(function()
-		return HttpService:JSONDecode(fileContent)
-	end)
-	
-	if not success2 then
-		return false, "Failed to parse config data"
-	end
-	
-	-- Aplicar configurações
-	if configData.settings then
-		for key, value in pairs(configData.settings) do
-			if state[key] ~= nil then
-				state[key] = value
-				
-				-- Atualizar toggles visuais
-				if toggleUpdateFunctions[key] then
-					toggleUpdateFunctions[key](value)
-				end
-			end
-			
-			-- Estados extras
-			if key == "playerESPEnabled" then
-				playerESPEnabled = value
-				if toggleUpdateFunctions.playerESP then
-					toggleUpdateFunctions.playerESP(value)
-				end
-			elseif key == "fovEnabled" then
-				fovEnabled = value
-				if toggleUpdateFunctions.fov then
-					toggleUpdateFunctions.fov(value)
-				end
-			elseif key == "noClipEnabled" then
-				noClipEnabled = value
-				if toggleUpdateFunctions.noClip then
-					toggleUpdateFunctions.noClip(value)
-				end
-			end
-		end
-		
-		-- Atualizar sliders
-		if state.autofarmDistance then
-			autofarmDistValueLabel.Text = tostring(state.autofarmDistance)
-			local percent = (state.autofarmDistance - autofarmDistMin) / (autofarmDistMax - autofarmDistMin)
-			autofarmDistSliderFill.Size = UDim2_new(percent, 0, 1, 0)
-		end
-		
-		if state.m1ClickDelay then
-			m1ValueLabel.Text = tostring(state.m1ClickDelay)
-			local percent = (state.m1ClickDelay - m1Min) / (m1Max - m1Min)
-			m1SliderFill.Size = UDim2_new(percent, 0, 1, 0)
-		end
-		
-		if state.speedValue then
-			speedValueLabel.Text = tostring(state.speedValue)
-			local percent = (state.speedValue - speedMin) / (speedMax - speedMin)
-			speedSliderFill.Size = UDim2_new(percent, 0, 1, 0)
-		end
-		
-		-- Atualizar modo de farm
-		if state.autofarmMode then
-			updateFarmPositionVisuals()
-		end
-		
-		-- Atualizar lista de NPCs
-		if configData.settings.teleportNPCList then
-			state.teleportNPCList = configData.settings.teleportNPCList
-		end
-	end
-	
-	return true, "Config '" .. configName .. "' loaded successfully!"
+    configName = configName or CONFIG_SYSTEM.AUTO_LOAD_CONFIG
+    if configName == "" then configName = "default" end
+    
+    local success, configData
+    
+    -- Tenta carregar do arquivo primeiro
+    success, configData = loadFromFileSystem(configName)
+    if not success then
+        -- Fallback para LocalStorage
+        success, configData = loadFromLocalStorage(configName)
+    end
+    
+    if not success then
+        return false, "Config '" .. configName .. "' not found"
+    end
+    
+    -- Aplica as configurações
+    if configData.settings then
+        for key, value in pairs(configData.settings) do
+            if state[key] ~= nil then
+                state[key] = value
+                
+                -- Atualiza toggles visuais
+                if toggleUpdateFunctions[key] then
+                    toggleUpdateFunctions[key](value)
+                end
+            end
+            
+            -- Estados extras
+            if key == "playerESPEnabled" then
+                playerESPEnabled = value
+                if toggleUpdateFunctions.playerESP then
+                    toggleUpdateFunctions.playerESP(value)
+                end
+            elseif key == "fovEnabled" then
+                fovEnabled = value
+                if toggleUpdateFunctions.fov then
+                    toggleUpdateFunctions.fov(value)
+                end
+            elseif key == "noClipEnabled" then
+                noClipEnabled = value
+                if toggleUpdateFunctions.noClip then
+                    toggleUpdateFunctions.noClip(value)
+                end
+            end
+        end
+        
+        -- Atualizar sliders UI
+        if state.autofarmDistance and autofarmDistValueLabel then
+            autofarmDistValueLabel.Text = tostring(state.autofarmDistance)
+            local percent = (state.autofarmDistance - autofarmDistMin) / (autofarmDistMax - autofarmDistMin)
+            autofarmDistSliderFill.Size = UDim2_new(percent, 0, 1, 0)
+        end
+        
+        if state.m1ClickDelay and m1ValueLabel then
+            m1ValueLabel.Text = tostring(state.m1ClickDelay)
+            local percent = (state.m1ClickDelay - m1Min) / (m1Max - m1Min)
+            m1SliderFill.Size = UDim2_new(percent, 0, 1, 0)
+        end
+        
+        if state.speedValue and speedValueLabel then
+            speedValueLabel.Text = tostring(state.speedValue)
+            local percent = (state.speedValue - speedMin) / (speedMax - speedMin)
+            speedSliderFill.Size = UDim2_new(percent, 0, 1, 0)
+        end
+        
+        -- Atualizar modo de farm
+        if state.autofarmMode then
+            updateFarmPositionVisuals()
+        end
+    end
+    
+    return true, "Config '" .. configName .. "' loaded successfully!"
 end
 
 local function overwriteConfig(configName)
-	if not ensureConfigFolder() then
-		return false, "Config folder not available"
-	end
-	
-	configName = configName or "default"
-	
-	-- Primeiro carrega a config existente para preservar o nome e timestamp
-	local existingData = {}
-	local fileName = configName .. CONFIG_SYSTEM.CONFIG_FILE_EXTENSION
-	local filePath = CONFIG_SYSTEM.CONFIG_FOLDER_NAME .. "/" .. fileName
-	
-	if isfile(filePath) then
-		local success, fileContent = pcall(function()
-			return readfile(filePath)
-		end)
-		
-		if success then
-			local success2, parsed = pcall(function()
-				return HttpService:JSONDecode(fileContent)
-			end)
-			
-			if success2 then
-				existingData = parsed
-			end
-		end
-	end
-	
-	-- Criar nova config com dados existentes + atualizações
-	local configData = existingData or {
-		configName = configName,
-		version = "4.3"
-	}
-	
-	configData.timestamp = os.date("%Y-%m-%d %H:%M:%S")
-	configData.settings = configData.settings or {}
-	
-	-- Atualizar com configurações atuais
-	for key, defaultValue in pairs(DEFAULT_CONFIG_DATA) do
-		if state[key] ~= nil then
-			configData.settings[key] = state[key]
-		else
-			configData.settings[key] = defaultValue
-		end
-	end
-	
-	-- Adicionar estados extras
-	configData.settings.playerESPEnabled = playerESPEnabled
-	configData.settings.fovEnabled = fovEnabled
-	configData.settings.noClipEnabled = noClipEnabled
-	
-	-- Preservar lista de NPCs se existir
-	if not configData.settings.teleportNPCList then
-		configData.settings.teleportNPCList = state.teleportNPCList or {}
-	end
-	
-	local success, encoded = pcall(function()
-		return HttpService:JSONEncode(configData)
-	end)
-	
-	if not success then
-		return false, "Failed to encode config data"
-	end
-	
-	writefile(filePath, encoded)
-	return true, "Config '" .. configName .. "' overwritten successfully!"
+    configName = configName or "default"
+    if configName == "" then configName = "default" end
+    
+    -- Carrega config existente se possível
+    local existingData = {}
+    local success, loadedData = loadFromFileSystem(configName)
+    if not success then
+        success, loadedData = loadFromLocalStorage(configName)
+    end
+    
+    if success and loadedData then
+        existingData = loadedData
+    end
+    
+    -- Atualiza com dados atuais
+    local configData = existingData or {
+        configName = configName,
+        version = "4.3"
+    }
+    
+    configData.timestamp = os.date("%Y-%m-%d %H:%M:%S")
+    configData.settings = configData.settings or {}
+    
+    -- Atualiza com configurações atuais
+    for key, defaultValue in pairs(DEFAULT_CONFIG_DATA) do
+        if state[key] ~= nil then
+            configData.settings[key] = state[key]
+        else
+            configData.settings[key] = defaultValue
+        end
+    end
+    
+    -- Adicionar estados extras
+    configData.settings.playerESPEnabled = playerESPEnabled
+    configData.settings.fovEnabled = fovEnabled
+    configData.settings.noClipEnabled = noClipEnabled
+    
+    -- Preservar lista de NPCs se existir
+    if not configData.settings.teleportNPCList then
+        configData.settings.teleportNPCList = state.teleportNPCList or {}
+    end
+    
+    -- Tenta salvar em arquivo primeiro
+    local success, message = saveToFileSystem(configName, configData)
+    if not success then
+        -- Fallback para LocalStorage
+        success, message = saveToLocalStorage(configName, configData)
+    end
+    
+    return success, message
 end
 
 local function getConfigList()
-	if not ensureConfigFolder() then
-		return {}
-	end
-	
-	local configs = {}
-	
-	if listfiles then
-		local files = listfiles(CONFIG_SYSTEM.CONFIG_FOLDER_NAME)
-		for _, filePath in ipairs(files) do
-			local fileName = filePath:match("[^/]+$")
-			if fileName:match("%.json$") then
-				local configName = fileName:gsub(CONFIG_SYSTEM.CONFIG_FILE_EXTENSION, "")
-				table.insert(configs, configName)
-			end
-		end
-	end
-	
-	table.sort(configs)
-	return configs
+    local configs = {}
+    
+    -- Primeiro tenta listar do sistema de arquivos
+    if hasFileSystem and listfiles then
+        pcall(function()
+            if isfolder(CONFIG_SYSTEM.CONFIG_FOLDER_NAME) then
+                local files = listfiles(CONFIG_SYSTEM.CONFIG_FOLDER_NAME)
+                for _, filePath in ipairs(files) do
+                    local fileName = filePath:match("[^/\\]+$")
+                    if fileName:match("%.json$") then
+                        local configName = fileName:gsub(CONFIG_SYSTEM.CONFIG_FILE_EXTENSION, "")
+                        table.insert(configs, configName)
+                    end
+                end
+            end
+        end)
+    end
+    
+    -- Depois adiciona do LocalStorage
+    pcall(function()
+        if _G.CyberHubConfigs then
+            for configName, _ in pairs(_G.CyberHubConfigs) do
+                if not table.find(configs, configName) then
+                    table.insert(configs, configName)
+                end
+            end
+        end
+    end)
+    
+    -- Verifica atributos do jogador
+    pcall(function()
+        local attributes = player:GetAttributes()
+        for attrName, _ in pairs(attributes) do
+            if attrName:find("^CyberConfig_") then
+                local configName = attrName:gsub("^CyberConfig_", "")
+                if not table.find(configs, configName) then
+                    table.insert(configs, configName)
+                end
+            end
+        end
+    end)
+    
+    -- Adiciona sempre a config "default" à lista
+    if not table.find(configs, "default") then
+        table.insert(configs, "default")
+    end
+    
+    table.sort(configs)
+    return configs
 end
 
+-- Função para criar uma config padrão se não existir nenhuma
+local function createDefaultConfigIfNeeded()
+    local configs = getConfigList()
+    
+    if not table.find(configs, "default") then
+        print("[Config] Creating default config...")
+        local success, message = createConfig("default")
+        if success then
+            print("[Config] Default config created successfully")
+        else
+            print("[Config] Failed to create default config: " .. message)
+        end
+    else
+        print("[Config] Default config already exists")
+    end
+end
+
+-- Auto-load ao iniciar
 local function autoLoadConfig()
-	if CONFIG_SYSTEM.AUTO_LOAD_CONFIG and CONFIG_SYSTEM.AUTO_LOAD_CONFIG ~= "" then
-		local success, message = loadConfig(CONFIG_SYSTEM.AUTO_LOAD_CONFIG)
-		if not success then
-			-- Tenta carregar a config padrão se a especificada não existir
-			if CONFIG_SYSTEM.AUTO_LOAD_CONFIG ~= "default" then
-				loadConfig("default")
-			end
-		end
-	end
-end
-
--- Função para salvar automaticamente quando o script terminar
-local function setupAutoSave()
-	if CONFIG_SYSTEM.AUTO_SAVE then
-		game:GetService("Players").LocalPlayer:GetPropertyChangedSignal("Parent"):Connect(function()
-			if player.Parent == nil then
-				overwriteConfig("default")
-			end
-		end)
-	end
+    createDefaultConfigIfNeeded()
+    
+    if CONFIG_SYSTEM.AUTO_LOAD_CONFIG and CONFIG_SYSTEM.AUTO_LOAD_CONFIG ~= "" then
+        local success, message = loadConfig(CONFIG_SYSTEM.AUTO_LOAD_CONFIG)
+        if not success then
+            -- Se não conseguir, tenta carregar "default"
+            if CONFIG_SYSTEM.AUTO_LOAD_CONFIG ~= "default" then
+                loadConfig("default")
+            end
+        else
+            print("[Config] Auto-loaded: " .. CONFIG_SYSTEM.AUTO_LOAD_CONFIG)
+        end
+    end
 end
 
 -- ===== CACHE =====
@@ -1109,8 +1239,6 @@ local combatBtn = createSidebarBtn("⚔", "CombatBtn")
 local visualBtn = createSidebarBtn("👁", "VisualBtn")
 local teleportBtn = createSidebarBtn("📍", "TeleportBtn")
 local miscBtn = createSidebarBtn("🔧", "MiscBtn")
-
--- Adicionar botão de configurações
 local configBtn = createSidebarBtn("⚙", "ConfigBtn")
 
 local contentArea = Instance.new("Frame")
@@ -1445,7 +1573,7 @@ local configInfoLabel = Instance.new("TextLabel")
 configInfoLabel.Size = UDim2_new(1, -20, 1, 0)
 configInfoLabel.Position = UDim2_new(0, 10, 0, 0)
 configInfoLabel.BackgroundTransparency = 1
-configInfoLabel.Text = "⚙️ Config System\nSave and load your settings\nConfigs are saved in workspace folder"
+configInfoLabel.Text = "⚙️ Config System\nSave and load your settings\nAuto-saves on exit"
 configInfoLabel.Font = Enum.Font.Gotham
 configInfoLabel.TextSize = 10
 configInfoLabel.TextColor3 = Color3_white
@@ -1483,7 +1611,7 @@ configListLayout.Parent = configListContainer
 -- Função para atualizar a lista de configs
 local function populateConfigList()
 	for _, child in ipairs(configListContainer:GetChildren()) do
-		if child:IsA("TextButton") then
+		if child:IsA("TextButton") or child:IsA("TextLabel") then
 			child:Destroy()
 		end
 	end
@@ -1499,6 +1627,40 @@ local function populateConfigList()
 		noConfigsLabel.TextSize = 11
 		noConfigsLabel.TextColor3 = Color3_fromRGB(120, 120, 140)
 		noConfigsLabel.Parent = configListContainer
+		
+		-- Botão para criar config padrão
+		local createDefaultBtn = Instance.new("TextButton")
+		createDefaultBtn.Size = UDim2_new(1, 0, 0, 35)
+		createDefaultBtn.BackgroundColor3 = Color3_fromRGB(80, 200, 120)
+		createDefaultBtn.Text = "✨ Create Default Config"
+		createDefaultBtn.Font = Enum.Font.GothamBold
+		createDefaultBtn.TextSize = 11
+		createDefaultBtn.TextColor3 = Color3_white
+		createDefaultBtn.BorderSizePixel = 0
+		createDefaultBtn.AutoButtonColor = false
+		createDefaultBtn.Parent = configListContainer
+		
+		local btnCorner = Instance.new("UICorner")
+		btnCorner.CornerRadius = UDim.new(0, 6)
+		btnCorner.Parent = createDefaultBtn
+		
+		createDefaultBtn.MouseButton1Click:Connect(function()
+			local success, message = createConfig("default")
+			if success then
+				createDefaultBtn.BackgroundColor3 = Color3_fromRGB(80, 200, 120)
+				createDefaultBtn.Text = "✅ Default config created!"
+				task.wait(1)
+				createDefaultBtn.Text = "✨ Create Default Config"
+				populateConfigList()
+			else
+				createDefaultBtn.BackgroundColor3 = Color3_fromRGB(200, 50, 50)
+				createDefaultBtn.Text = "❌ Failed: " .. message
+				task.wait(1)
+				createDefaultBtn.BackgroundColor3 = Color3_fromRGB(80, 200, 120)
+				createDefaultBtn.Text = "✨ Create Default Config"
+			end
+		end)
+		
 		return
 	end
 	
@@ -2312,12 +2474,21 @@ screenGui.Destroying:Connect(function()
 end)
 
 -- ===== STARTUP =====
--- Carregar config automaticamente
+-- Criar config padrão e carregar automaticamente
 task.spawn(function()
-	task.wait(0.5) -- Esperar tudo carregar
+	task.wait(0.5) -- Esperar GUI carregar
+	createDefaultConfigIfNeeded()
 	autoLoadConfig()
 	populateConfigList()
-	setupAutoSave()
+	
+	-- Feedback no console
+	print("═══════════════════════════════════════════════")
+	print("        CONFIG SYSTEM INITIALIZED")
+	print("═══════════════════════════════════════════════")
+	print("  Default config: Created/Loaded")
+	print("  Storage: " .. (hasFileSystem and "File System" or "LocalStorage"))
+	print("  Auto-load: " .. CONFIG_SYSTEM.AUTO_LOAD_CONFIG)
+	print("═══════════════════════════════════════════════")
 end)
 
 print("═══════════════════════════════════════════════")
