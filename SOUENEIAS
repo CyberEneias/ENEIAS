@@ -40,7 +40,7 @@ local Color3_black = Color3.new(0,0,0)
 -- ===== STATE =====
 local state = {
 	autofarmEnabled = false,
-	autofarmMode = "Above", -- "Behind" or "Above" (ALTERADO PARA "Above" POR PADRÃO)
+	autofarmMode = "Above", -- MODIFICADO: Começa em "Above" em vez de "Behind"
 	autofarmDistance = 8, -- distância entre player e NPC (Behind = atrás, Above = altura) - alterável por slider
 	infiniteJumpEnabled = false,
 	speedEnabled = false,
@@ -71,25 +71,7 @@ local state = {
 	tracerLines = {},
 	healthBarObjects = {},
 	isTeleporting = false,
-	teleportNPCList = {},
-	
-	-- Novo sistema de keybinds
-	keybinds = {
-		autofarm = Enum.KeyCode.F3, -- F3 para autofarm (por padrão)
-		speedBoost = nil,
-		infiniteJump = nil,
-		m1Macro = Enum.KeyCode.F2,
-		lockOn = nil,
-		esp = nil,
-		tracers = nil,
-		healthBars = nil,
-		playerESP = nil,
-		fov = nil,
-		noClip = nil
-	},
-	
-	-- Estado de configuração de keybinds
-	settingKeybind = nil
+	teleportNPCList = {}
 }
 
 -- Additional global states
@@ -101,131 +83,6 @@ local fovCircle = nil
 
 -- ===== TOGGLE FUNCTIONS TABLE =====
 local toggleUpdateFunctions = {}
-
--- ===== KEYBIND SYSTEM =====
-local keybindButtons = {} -- Para armazenar referências aos botões de keybind
-
-local function getKeyName(keyCode)
-	if keyCode == nil then return "Press Key" end
-	local keyName = tostring(keyCode):gsub("Enum.KeyCode.", "")
-	return keyName
-end
-
-local function createKeybindButton(parent, labelText, keybindType)
-	local container = Instance.new("Frame")
-	container.Size = UDim2_new(1, 0, 0, 40)
-	container.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
-	container.BorderSizePixel = 0
-	container.Parent = parent
-	
-	local containerCorner = Instance.new("UICorner")
-	containerCorner.CornerRadius = UDim.new(0, 6)
-	containerCorner.Parent = container
-	
-	local label = Instance.new("TextLabel")
-	label.Size = UDim2_new(0.6, -10, 1, 0)
-	label.Position = UDim2_new(0, 10, 0, 0)
-	label.BackgroundTransparency = 1
-	label.Text = labelText
-	label.Font = Enum.Font.Gotham
-	label.TextSize = 12
-	label.TextColor3 = Color3_white
-	label.TextXAlignment = Enum.TextXAlignment.Left
-	label.Parent = container
-	
-	local keybindBtn = Instance.new("TextButton")
-	keybindBtn.Name = keybindType
-	keybindBtn.Size = UDim2_new(0, 70, 0, 25)
-	keybindBtn.Position = UDim2_new(1, -75, 0.5, -12.5)
-	keybindBtn.BackgroundColor3 = Color3_fromRGB(35, 35, 50)
-	keybindBtn.Text = getKeyName(state.keybinds[keybindType])
-	keybindBtn.Font = Enum.Font.GothamBold
-	keybindBtn.TextSize = 10
-	keybindBtn.TextColor3 = Color3_fromRGB(200, 200, 220)
-	keybindBtn.BorderSizePixel = 0
-	keybindBtn.AutoButtonColor = false
-	keybindBtn.Parent = container
-	
-	local keybindBtnCorner = Instance.new("UICorner")
-	keybindBtnCorner.CornerRadius = UDim.new(0, 4)
-	keybindBtnCorner.Parent = keybindBtn
-	
-	-- Armazena referência para atualização
-	keybindButtons[keybindType] = keybindBtn
-	
-	return container, keybindBtn
-end
-
-local function updateKeybindVisual(keybindType)
-	if keybindButtons[keybindType] then
-		keybindButtons[keybindType].Text = getKeyName(state.keybinds[keybindType])
-		
-		if state.settingKeybind == keybindType then
-			keybindButtons[keybindType].BackgroundColor3 = Color3_fromRGB(100, 180, 255)
-			keybindButtons[keybindType].Text = "Press Key..."
-		else
-			keybindButtons[keybindType].BackgroundColor3 = state.keybinds[keybindType] and Color3_fromRGB(35, 35, 50) or Color3_fromRGB(25, 25, 40)
-		end
-	end
-end
-
-local function startKeybindSetting(keybindType)
-	-- Cancela configuração anterior se houver
-	if state.settingKeybind then
-		updateKeybindVisual(state.settingKeybind)
-	end
-	
-	state.settingKeybind = keybindType
-	updateKeybindVisual(keybindType)
-end
-
-local function setKeybind(keybindType, keyCode)
-	state.keybinds[keybindType] = keyCode
-	state.settingKeybind = nil
-	updateKeybindVisual(keybindType)
-end
-
-local function handleKeybindInput(input, processed)
-	if processed then return end
-	
-	-- Se estiver configurando um keybind
-	if state.settingKeybind then
-		if input.UserInputType == Enum.UserInputType.Keyboard then
-			setKeybind(state.settingKeybind, input.KeyCode)
-		end
-		return
-	end
-	
-	-- Executa keybinds se não estiver configurando
-	for keybindType, keyCode in pairs(state.keybinds) do
-		if keyCode and input.KeyCode == keyCode then
-			-- Toggle das features correspondentes
-			if keybindType == "autofarm" then
-				toggleUpdateFunctions.autofarm(not state.autofarmEnabled)
-			elseif keybindType == "speedBoost" then
-				toggleUpdateFunctions.speed(not state.speedEnabled)
-			elseif keybindType == "infiniteJump" then
-				toggleUpdateFunctions.infiniteJump(not state.infiniteJumpEnabled)
-			elseif keybindType == "m1Macro" then
-				toggleUpdateFunctions.m1Macro(not state.m1MacroEnabled)
-			elseif keybindType == "lockOn" then
-				toggleUpdateFunctions.lockOn(not state.lockOnEnabled)
-			elseif keybindType == "esp" then
-				toggleUpdateFunctions.esp(not state.espEnabled)
-			elseif keybindType == "tracers" then
-				toggleUpdateFunctions.tracers(not state.tracersEnabled)
-			elseif keybindType == "healthBars" then
-				toggleUpdateFunctions.healthBars(not state.healthBarsEnabled)
-			elseif keybindType == "playerESP" then
-				toggleUpdateFunctions.playerESP(not playerESPEnabled)
-			elseif keybindType == "fov" then
-				toggleUpdateFunctions.fov(not fovEnabled)
-			elseif keybindType == "noClip" then
-				toggleUpdateFunctions.noClip(not noClipEnabled)
-			end
-		end
-	end
-end
 
 -- ===== UTILS =====
 local function disconnectConnection(name)
@@ -821,8 +678,8 @@ screenGui.Parent = CoreGui
 
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2_new(0, 320, 0, 520) -- Aumentado para acomodar keybinds
-mainFrame.Position = UDim2_new(0, 20, 0.5, -260)
+mainFrame.Size = UDim2_new(0, 320, 0, 450)
+mainFrame.Position = UDim2_new(0, 20, 0.5, -225)
 mainFrame.BackgroundColor3 = Color3_fromRGB(13, 13, 18)
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
@@ -959,7 +816,6 @@ local combatBtn = createSidebarBtn("⚔", "CombatBtn")
 local visualBtn = createSidebarBtn("👁", "VisualBtn")
 local teleportBtn = createSidebarBtn("📍", "TeleportBtn")
 local miscBtn = createSidebarBtn("🔧", "MiscBtn")
-local keybindsBtn = createSidebarBtn("⌨️", "KeybindsBtn") -- Novo botão para keybinds
 
 local contentArea = Instance.new("Frame")
 contentArea.Name = "ContentArea"
@@ -997,14 +853,12 @@ local combatPage = createPage("CombatPage")
 local visualPage = createPage("VisualPage")
 local teleportPage = createPage("TeleportPage")
 local miscPage = createPage("MiscPage")
-local keybindsPage = createPage("KeybindsPage") -- Nova página para keybinds
 
 local function switchPage(page, btn)
 	combatPage.Visible = false
 	visualPage.Visible = false
 	teleportPage.Visible = false
 	miscPage.Visible = false
-	keybindsPage.Visible = false
 	
 	combatBtn.BackgroundColor3 = Color3_fromRGB(22, 22, 30)
 	combatBtn.TextColor3 = Color3_fromRGB(120, 120, 140)
@@ -1014,8 +868,6 @@ local function switchPage(page, btn)
 	teleportBtn.TextColor3 = Color3_fromRGB(120, 120, 140)
 	miscBtn.BackgroundColor3 = Color3_fromRGB(22, 22, 30)
 	miscBtn.TextColor3 = Color3_fromRGB(120, 120, 140)
-	keybindsBtn.BackgroundColor3 = Color3_fromRGB(22, 22, 30)
-	keybindsBtn.TextColor3 = Color3_fromRGB(120, 120, 140)
 	
 	page.Visible = true
 	btn.BackgroundColor3 = Color3_fromRGB(100, 180, 255)
@@ -1036,10 +888,6 @@ end)
 
 miscBtn.MouseButton1Click:Connect(function()
 	switchPage(miscPage, miscBtn)
-end)
-
-keybindsBtn.MouseButton1Click:Connect(function()
-	switchPage(keybindsPage, keybindsBtn)
 end)
 
 switchPage(combatPage, combatBtn)
@@ -1229,114 +1077,6 @@ local function createButton(parent, text, color)
 	return btn
 end
 
-local function createDropdown(parent, labelText, options, defaultOption)
-	local container = Instance.new("Frame")
-	container.Size = UDim2_new(1, 0, 0, 50)
-	container.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
-	container.BorderSizePixel = 0
-	container.Parent = parent
-	
-	local containerCorner = Instance.new("UICorner")
-	containerCorner.CornerRadius = UDim.new(0, 6)
-	containerCorner.Parent = container
-	
-	local label = Instance.new("TextLabel")
-	label.Size = UDim2_new(1, -20, 0, 18)
-	label.Position = UDim2_new(0, 10, 0, 6)
-	label.BackgroundTransparency = 1
-	label.Text = labelText
-	label.Font = Enum.Font.GothamBold
-	label.TextSize = 11
-	label.TextColor3 = Color3_fromRGB(180, 180, 200)
-	label.TextXAlignment = Enum.TextXAlignment.Left
-	label.Parent = container
-	
-	local dropdown = Instance.new("TextButton")
-	dropdown.Size = UDim2_new(1, -20, 0, 22)
-	dropdown.Position = UDim2_new(0, 10, 0, 24)
-	dropdown.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
-	dropdown.Text = defaultOption .. "  ▼"
-	dropdown.Font = Enum.Font.Gotham
-	dropdown.TextSize = 11
-	dropdown.TextColor3 = Color3_white
-	dropdown.BorderSizePixel = 0
-	dropdown.Parent = container
-	
-	local dropdownCorner = Instance.new("UICorner")
-	dropdownCorner.CornerRadius = UDim.new(0, 4)
-	dropdownCorner.Parent = dropdown
-	
-	local dropdownPadding = Instance.new("UIPadding")
-	dropdownPadding.PaddingLeft = UDim.new(0, 8)
-	dropdownPadding.Parent = dropdown
-	
-	local optionsFrame = Instance.new("ScrollingFrame")
-	optionsFrame.Name = "OptionsFrame"
-	optionsFrame.Size = UDim2_new(1, -20, 0, math.min(#options * 25, 100))
-	optionsFrame.Position = UDim2_new(0, 10, 0, 48)
-	optionsFrame.BackgroundColor3 = Color3_fromRGB(20, 20, 28)
-	optionsFrame.BorderSizePixel = 0
-	optionsFrame.ScrollBarThickness = 3
-	optionsFrame.ScrollBarImageColor3 = Color3_fromRGB(80, 80, 100)
-	optionsFrame.Visible = false
-	optionsFrame.ZIndex = 10
-	optionsFrame.Parent = container
-	
-	local optionsCorner = Instance.new("UICorner")
-	optionsCorner.CornerRadius = UDim.new(0, 4)
-	optionsCorner.Parent = optionsFrame
-	
-	local optionsLayout = Instance.new("UIListLayout")
-	optionsLayout.Padding = UDim.new(0, 2)
-	optionsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	optionsLayout.Parent = optionsFrame
-	
-	for _, option in ipairs(options) do
-		local optionBtn = Instance.new("TextButton")
-		optionBtn.Size = UDim2_new(1, 0, 0, 23)
-		optionBtn.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
-		optionBtn.Text = option
-		optionBtn.Font = Enum.Font.Gotham
-		optionBtn.TextSize = 10
-		optionBtn.TextColor3 = Color3_white
-		optionBtn.BorderSizePixel = 0
-		optionBtn.AutoButtonColor = false
-		optionBtn.Parent = optionsFrame
-		
-		optionBtn.MouseEnter:Connect(function()
-			optionBtn.BackgroundColor3 = Color3_fromRGB(35, 35, 45)
-		end)
-		
-		optionBtn.MouseLeave:Connect(function()
-			optionBtn.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
-		end)
-		
-		optionBtn.MouseButton1Click:Connect(function()
-			dropdown.Text = option .. "  ▼"
-			optionsFrame.Visible = false
-			container.Size = UDim2_new(1, 0, 0, 50)
-			
-			-- Atualizar o estado
-			if labelText == "Farm Position" then
-				state.autofarmMode = option
-			end
-		end)
-	end
-	
-	optionsFrame.CanvasSize = UDim2.new(0, 0, 0, #options * 25)
-	
-	dropdown.MouseButton1Click:Connect(function()
-		optionsFrame.Visible = not optionsFrame.Visible
-		if optionsFrame.Visible then
-			container.Size = UDim2_new(1, 0, 0, 50 + math.min(#options * 25, 100) + 5)
-		else
-			container.Size = UDim2_new(1, 0, 0, 50)
-		end
-	end)
-	
-	return container, dropdown
-end
-
 -- ===== COMBAT PAGE =====
 createSectionHeader(combatPage, "Auto Farm Settings")
 
@@ -1390,11 +1130,11 @@ local farmModeBehindBtn = Instance.new("TextButton")
 farmModeBehindBtn.Name = "Option_Behind"
 farmModeBehindBtn.LayoutOrder = 1
 farmModeBehindBtn.Size = UDim2_new(0, 130, 0, 28)
-farmModeBehindBtn.BackgroundColor3 = Color3_fromRGB(40, 40, 55) -- Alterado: Above é padrão
+farmModeBehindBtn.BackgroundColor3 = Color3_fromRGB(40, 40, 55) -- MODIFICADO: Inicia desativado
 farmModeBehindBtn.Text = "Behind"
 farmModeBehindBtn.Font = Enum.Font.GothamBold
 farmModeBehindBtn.TextSize = 11
-farmModeBehindBtn.TextColor3 = Color3_fromRGB(180, 180, 200) -- Alterado: Above é padrão
+farmModeBehindBtn.TextColor3 = Color3_fromRGB(180, 180, 200) -- MODIFICADO: Inicia com cor desativada
 farmModeBehindBtn.BorderSizePixel = 0
 farmModeBehindBtn.AutoButtonColor = false
 farmModeBehindBtn.Parent = farmModeButtonsFrame
@@ -1407,11 +1147,11 @@ local farmModeAboveBtn = Instance.new("TextButton")
 farmModeAboveBtn.Name = "Option_Above"
 farmModeAboveBtn.LayoutOrder = 2
 farmModeAboveBtn.Size = UDim2_new(0, 130, 0, 28)
-farmModeAboveBtn.BackgroundColor3 = Color3_fromRGB(100, 180, 255) -- Alterado: Above é padrão
+farmModeAboveBtn.BackgroundColor3 = Color3_fromRGB(100, 180, 255) -- MODIFICADO: Inicia ativado
 farmModeAboveBtn.Text = "Above"
 farmModeAboveBtn.Font = Enum.Font.GothamBold
 farmModeAboveBtn.TextSize = 11
-farmModeAboveBtn.TextColor3 = Color3_white -- Alterado: Above é padrão
+farmModeAboveBtn.TextColor3 = Color3_white -- MODIFICADO: Inicia com cor ativada
 farmModeAboveBtn.BorderSizePixel = 0
 farmModeAboveBtn.AutoButtonColor = false
 farmModeAboveBtn.Parent = farmModeButtonsFrame
@@ -1454,6 +1194,8 @@ end)
 farmModeAboveBtn.MouseLeave:Connect(function()
 	updateFarmPositionVisuals()
 end)
+
+updateFarmPositionVisuals()
 
 -- Slider: distância entre player e NPC no autofarm (Behind = atrás, Above = altura) - altera em tempo real
 local autofarmDistContainer, autofarmDistSliderBtn, autofarmDistSliderFill, autofarmDistValueLabel, autofarmDistMin, autofarmDistMax = createSlider(
@@ -1662,101 +1404,6 @@ local noClipContainer, noClipToggle, noClipBg, noClipCircle = createToggle(
 	noClipEnabled
 )
 
--- ===== KEYBINDS PAGE =====
-createSectionHeader(keybindsPage, "Keybinds Configuration")
-
--- Info text
-local keybindsInfoContainer = Instance.new("Frame")
-keybindsInfoContainer.Size = UDim2_new(1, 0, 0, 50)
-keybindsInfoContainer.BackgroundColor3 = Color3_fromRGB(100, 180, 255)
-keybindsInfoContainer.BackgroundTransparency = 0.9
-keybindsInfoContainer.BorderSizePixel = 0
-keybindsInfoContainer.Parent = keybindsPage
-
-local keybindsInfoCorner = Instance.new("UICorner")
-keybindsInfoCorner.CornerRadius = UDim.new(0, 6)
-keybindsInfoCorner.Parent = keybindsInfoContainer
-
-local keybindsInfoLabel = Instance.new("TextLabel")
-keybindsInfoLabel.Size = UDim2_new(1, -20, 1, 0)
-keybindsInfoLabel.Position = UDim2_new(0, 10, 0, 0)
-keybindsInfoLabel.BackgroundTransparency = 1
-keybindsInfoLabel.Text = "⌨️ Click 'Press Key' then press any key to bind\nPress ESC to clear binding\nF1: Toggle GUI | F2: M1 Macro | F3: Auto Farm"
-keybindsInfoLabel.Font = Enum.Font.Gotham
-keybindsInfoLabel.TextSize = 10
-keybindsInfoLabel.TextColor3 = Color3_white
-keybindsInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
-keybindsInfoLabel.TextWrapped = true
-keybindsInfoLabel.Parent = keybindsInfoContainer
-
--- Criar botões de keybind para todas as features
-createSectionHeader(keybindsPage, "Combat Keybinds")
-local autofarmKeybindContainer, autofarmKeybindBtn = createKeybindButton(keybindsPage, "Auto Farm", "autofarm")
-local m1MacroKeybindContainer, m1MacroKeybindBtn = createKeybindButton(keybindsPage, "M1 Macro", "m1Macro")
-local lockOnKeybindContainer, lockOnKeybindBtn = createKeybindButton(keybindsPage, "Lock On", "lockOn")
-
-createSectionHeader(keybindsPage, "Movement Keybinds")
-local speedKeybindContainer, speedKeybindBtn = createKeybindButton(keybindsPage, "Speed Boost", "speedBoost")
-local jumpKeybindContainer, jumpKeybindBtn = createKeybindButton(keybindsPage, "Infinite Jump", "infiniteJump")
-local noClipKeybindContainer, noClipKeybindBtn = createKeybindButton(keybindsPage, "No Clip", "noClip")
-
-createSectionHeader(keybindsPage, "Visual Keybinds")
-local espKeybindContainer, espKeybindBtn = createKeybindButton(keybindsPage, "ESP", "esp")
-local tracersKeybindContainer, tracersKeybindBtn = createKeybindButton(keybindsPage, "Tracers", "tracers")
-local healthBarsKeybindContainer, healthBarsKeybindBtn = createKeybindButton(keybindsPage, "Health Bars", "healthBars")
-local playerESPKeybindContainer, playerESPKeybindBtn = createKeybindButton(keybindsPage, "Player ESP", "playerESP")
-local fovKeybindContainer, fovKeybindBtn = createKeybindButton(keybindsPage, "FOV Circle", "fov")
-
--- Conectar botões de keybind
-autofarmKeybindBtn.MouseButton1Click:Connect(function()
-	startKeybindSetting("autofarm")
-end)
-
-m1MacroKeybindBtn.MouseButton1Click:Connect(function()
-	startKeybindSetting("m1Macro")
-end)
-
-lockOnKeybindBtn.MouseButton1Click:Connect(function()
-	startKeybindSetting("lockOn")
-end)
-
-speedKeybindBtn.MouseButton1Click:Connect(function()
-	startKeybindSetting("speedBoost")
-end)
-
-jumpKeybindBtn.MouseButton1Click:Connect(function()
-	startKeybindSetting("infiniteJump")
-end)
-
-noClipKeybindBtn.MouseButton1Click:Connect(function()
-	startKeybindSetting("noClip")
-end)
-
-espKeybindBtn.MouseButton1Click:Connect(function()
-	startKeybindSetting("esp")
-end)
-
-tracersKeybindBtn.MouseButton1Click:Connect(function()
-	startKeybindSetting("tracers")
-end)
-
-healthBarsKeybindBtn.MouseButton1Click:Connect(function()
-	startKeybindSetting("healthBars")
-end)
-
-playerESPKeybindBtn.MouseButton1Click:Connect(function()
-	startKeybindSetting("playerESP")
-end)
-
-fovKeybindBtn.MouseButton1Click:Connect(function()
-	startKeybindSetting("fov")
-end)
-
--- Atualizar visualização inicial
-for keybindType, _ in pairs(state.keybinds) do
-	updateKeybindVisual(keybindType)
-end
-
 -- ===== TOGGLE FUNCTIONS =====
 toggleUpdateFunctions.autofarm = function(enabled)
 	state.autofarmEnabled = enabled
@@ -1838,11 +1485,6 @@ UserInputService.InputEnded:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
 		m1Dragging = false
 		autofarmDistDragging = false
-	end
-	
-	-- Tratar ESC para cancelar keybind
-	if state.settingKeybind and input.KeyCode == Enum.KeyCode.Escape then
-		setKeybind(state.settingKeybind, nil)
 	end
 end)
 
@@ -2078,18 +1720,30 @@ end)
 
 UserInputService.InputBegan:Connect(function(input, processed)
 	if processed then return end
-	
-	-- Tratar keybinds primeiro
-	handleKeybindInput(input, processed)
-	
-	-- Hotkeys padrão
+
 	if input.KeyCode == Enum.KeyCode.F1 then
 		state.guiVisible = not state.guiVisible
 		mainFrame.Visible = state.guiVisible
 	end
+
+	if input.KeyCode == Enum.KeyCode.F2 then
+		toggleUpdateFunctions.m1Macro(not state.m1MacroEnabled)
+	end
 	
-	-- F2 já é tratado pelo sistema de keybinds (m1Macro)
-	-- F3 já é tratado pelo sistema de keybinds (autofarm)
+	-- NOVO: Ativar/Desativar Autofarm com F3
+	if input.KeyCode == Enum.KeyCode.F3 then
+		toggleUpdateFunctions.autofarm(not state.autofarmEnabled)
+	end
+	
+	-- NOVO: Ativar/Desativar Infinite Jump com Numpad 1
+	if input.KeyCode == Enum.KeyCode.NumPadOne then
+		toggleUpdateFunctions.infiniteJump(not state.infiniteJumpEnabled)
+	end
+	
+	-- NOVO: Ativar/Desativar Speed Boost com Numpad 2
+	if input.KeyCode == Enum.KeyCode.NumPadTwo then
+		toggleUpdateFunctions.speed(not state.speedEnabled)
+	end
 end)
 
 -- ===== CHARACTER EVENTS =====
@@ -2128,8 +1782,8 @@ print("  🎯  Lock On | M1 Macro")
 print("  🚀  Movement: Speed | Infinite Jump | No Clip")
 print("  👁️  Visual: ESP | Tracers | Health Bars")
 print("  📍  Teleport: Ultra Smooth (Anti-Kick)")
-print("  ⌨️  Keybinds: All features bindable")
 print("═══════════════════════════════════════════════")
-print("  F1 - Toggle GUI | F2 - M1 Macro | F3 - Auto Farm")
-print("  Configure all keybinds in the Keybinds tab")
+print("  F1 - Toggle GUI | F2 - Toggle M1 Macro")
+print("  F3 - Toggle Autofarm | Numpad1 - Inf Jump")
+print("  Numpad2 - Speed Boost")
 print("═══════════════════════════════════════════════")
