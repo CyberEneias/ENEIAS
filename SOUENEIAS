@@ -11,7 +11,6 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local CoreGui = game:GetService("CoreGui")
 local TweenService = game:GetService("TweenService")
-local HttpService = game:GetService("HttpService")
 
 local player = Players.LocalPlayer
 if not player then return end
@@ -85,217 +84,6 @@ local playerESPEnabled = false
 local fovEnabled = false
 local playerESPObjects = {}
 local fovCircle = nil
-
--- ===== CONFIG SYSTEM =====
-local ConfigSystem = {
-	CurrentConfigName = "default",
-	Configs = {},
-	ConfigsFolder = nil,
-	ConfigListUI = nil
-}
-
--- Inicializar sistema de configurações
-local function initConfigSystem()
-	-- Criar pasta raiz se não existir
-	if not isfolder("CyberHub") then
-		makefolder("CyberHub")
-	end
-	
-	-- Criar pasta de configs se não existir
-	if not isfolder(CONFIG.CONFIGS_FOLDER_NAME) then
-		makefolder(CONFIG.CONFIGS_FOLDER_NAME)
-	end
-	
-	ConfigSystem.ConfigsFolder = CONFIG.CONFIGS_FOLDER_NAME
-end
-
--- Salvar configuração atual
-local function saveConfig(configName)
-	if not configName or configName == "" then
-		return false, "Nome da configuração inválido"
-	end
-	
-	-- Validar nome do arquivo (remover caracteres inválidos)
-	configName = configName:gsub("[^%w%s_-]", ""):gsub("%s+", "_")
-	if configName == "" then
-		return false, "Nome da configuração inválido"
-	end
-	
-	-- Coletar estado atual
-	local configData = {
-		version = "1.0",
-		timestamp = os.time(),
-		autofarmEnabled = state.autofarmEnabled,
-		autofarmMode = state.autofarmMode,
-		autofarmDistance = state.autofarmDistance,
-		infiniteJumpEnabled = state.infiniteJumpEnabled,
-		speedEnabled = state.speedEnabled,
-		m1MacroEnabled = state.m1MacroEnabled,
-		espEnabled = state.espEnabled,
-		tracersEnabled = state.tracersEnabled,
-		healthBarsEnabled = state.healthBarsEnabled,
-		lockOnEnabled = state.lockOnEnabled,
-		speedValue = state.speedValue,
-		m1ClickDelay = state.m1ClickDelay,
-		noClipEnabled = noClipEnabled,
-		playerESPEnabled = playerESPEnabled,
-		fovEnabled = fovEnabled
-	}
-	
-	-- Converter para JSON
-	local jsonData
-	pcall(function()
-		jsonData = HttpService:JSONEncode(configData)
-	end)
-	
-	if not jsonData then
-		return false, "Erro ao serializar configuração"
-	end
-	
-	-- Caminho do arquivo
-	local filePath = ConfigSystem.ConfigsFolder .. "/" .. configName .. ".json"
-	
-	-- Salvar arquivo
-	local success, errorMsg = pcall(function()
-		writefile(filePath, jsonData)
-	end)
-	
-	if success then
-		ConfigSystem.CurrentConfigName = configName
-		return true, "Configuração '" .. configName .. "' salva com sucesso!"
-	else
-		return false, "Erro ao salvar: " .. tostring(errorMsg)
-	end
-end
-
--- Carregar configuração
-local function loadConfig(configName)
-	if not configName then
-		return false, "Nome da configuração não especificado"
-	end
-	
-	-- Caminho do arquivo
-	local filePath = ConfigSystem.ConfigsFolder .. "/" .. configName .. ".json"
-	
-	-- Verificar se o arquivo existe
-	if not isfile(filePath) then
-		return false, "Configuração '" .. configName .. "' não encontrada"
-	end
-	
-	-- Ler arquivo
-	local jsonData
-	local success, errorMsg = pcall(function()
-		jsonData = readfile(filePath)
-	end)
-	
-	if not success or not jsonData then
-		return false, "Erro ao ler configuração: " .. tostring(errorMsg)
-	end
-	
-	-- Converter de JSON
-	local configData
-	pcall(function()
-		configData = HttpService:JSONDecode(jsonData)
-	end)
-	
-	if not configData then
-		return false, "Erro ao decodificar configuração"
-	end
-	
-	-- Aplicar configuração (com fallbacks)
-	state.autofarmEnabled = configData.autofarmEnabled or false
-	state.autofarmMode = configData.autofarmMode or "Behind"
-	state.autofarmDistance = configData.autofarmDistance or 8
-	state.infiniteJumpEnabled = configData.infiniteJumpEnabled or false
-	state.speedEnabled = configData.speedEnabled or false
-	state.m1MacroEnabled = configData.m1MacroEnabled or false
-	state.espEnabled = configData.espEnabled or false
-	state.tracersEnabled = configData.tracersEnabled or false
-	state.healthBarsEnabled = configData.healthBarsEnabled or false
-	state.lockOnEnabled = configData.lockOnEnabled or false
-	state.speedValue = configData.speedValue or 160
-	state.m1ClickDelay = configData.m1ClickDelay or 0.15
-	noClipEnabled = configData.noClipEnabled or false
-	playerESPEnabled = configData.playerESPEnabled or false
-	fovEnabled = configData.fovEnabled or false
-	
-	-- Atualizar toggles visuais
-	for toggleName, enabled in pairs({
-		autofarm = state.autofarmEnabled,
-		lockOn = state.lockOnEnabled,
-		m1Macro = state.m1MacroEnabled,
-		speed = state.speedEnabled,
-		infiniteJump = state.infiniteJumpEnabled,
-		noClip = noClipEnabled,
-		esp = state.espEnabled,
-		tracers = state.tracersEnabled,
-		healthBars = state.healthBarsEnabled,
-		playerESP = playerESPEnabled,
-		fov = fovEnabled
-	}) do
-		if toggleUpdateFunctions[toggleName] then
-			toggleUpdateFunctions[toggleName](enabled)
-		end
-	end
-	
-	-- Atualizar sliders
-	autofarmDistValueLabel.Text = tostring(state.autofarmDistance)
-	local autofarmPercent = (state.autofarmDistance - 1) / (25 - 1)
-	autofarmDistSliderFill.Size = UDim2_new(autofarmPercent, 0, 1, 0)
-	
-	m1ValueLabel.Text = tostring(state.m1ClickDelay)
-	local m1Percent = (state.m1ClickDelay - 0.05) / (1 - 0.05)
-	m1SliderFill.Size = UDim2_new(m1Percent, 0, 1, 0)
-	
-	speedValueLabel.Text = tostring(state.speedValue)
-	local speedPercent = (state.speedValue - 50) / (300 - 50)
-	speedSliderFill.Size = UDim2_new(speedPercent, 0, 1, 0)
-	
-	-- Atualizar botões de modo de farm
-	updateFarmPositionVisuals()
-	
-	ConfigSystem.CurrentConfigName = configName
-	return true, "Configuração '" .. configName .. "' carregada com sucesso!"
-end
-
--- Sobrescrever configuração
-local function overwriteConfig(configName)
-	if not configName then
-		return false, "Selecione uma configuração para sobrescrever"
-	end
-	
-	-- Verificar se a configuração existe
-	local filePath = ConfigSystem.ConfigsFolder .. "/" .. configName .. ".json"
-	if not isfile(filePath) then
-		return false, "Configuração '" .. configName .. "' não encontrada"
-	end
-	
-	-- Salvar sobre a configuração existente
-	return saveConfig(configName)
-end
-
--- Listar configurações disponíveis
-local function getConfigList()
-	local configs = {}
-	
-	-- Verificar se a pasta existe
-	if not isfolder(ConfigSystem.ConfigsFolder) then
-		return configs
-	end
-	
-	-- Listar arquivos .json
-	local files = listfiles(ConfigSystem.ConfigsFolder)
-	for _, filePath in ipairs(files) do
-		-- Extrair nome do arquivo sem extensão
-		local fileName = filePath:match("([^/\\]+)%.json$")
-		if fileName then
-			table.insert(configs, fileName)
-		end
-	end
-	
-	table.sort(configs)
-	return configs
-end
 
 -- ===== TOGGLE FUNCTIONS TABLE =====
 local toggleUpdateFunctions = {}
@@ -1302,112 +1090,254 @@ local function createButton(parent, text, color)
 	return btn
 end
 
-local function createDropdown(parent, labelText, options, defaultOption)
-	local container = Instance.new("Frame")
-	container.Size = UDim2_new(1, 0, 0, 50)
-	container.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
-	container.BorderSizePixel = 0
-	container.Parent = parent
-	
-	local containerCorner = Instance.new("UICorner")
-	containerCorner.CornerRadius = UDim.new(0, 6)
-	containerCorner.Parent = container
-	
-	local label = Instance.new("TextLabel")
-	label.Size = UDim2_new(1, -20, 0, 18)
-	label.Position = UDim2_new(0, 10, 0, 6)
-	label.BackgroundTransparency = 1
-	label.Text = labelText
-	label.Font = Enum.Font.GothamBold
-	label.TextSize = 11
-	label.TextColor3 = Color3_fromRGB(180, 180, 200)
-	label.TextXAlignment = Enum.TextXAlignment.Left
-	label.Parent = container
-	
-	local dropdown = Instance.new("TextButton")
-	dropdown.Size = UDim2_new(1, -20, 0, 22)
-	dropdown.Position = UDim2_new(0, 10, 0, 24)
-	dropdown.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
-	dropdown.Text = defaultOption .. "  ▼"
-	dropdown.Font = Enum.Font.Gotham
-	dropdown.TextSize = 11
-	dropdown.TextColor3 = Color3_white
-	dropdown.BorderSizePixel = 0
-	dropdown.Parent = container
-	
-	local dropdownCorner = Instance.new("UICorner")
-	dropdownCorner.CornerRadius = UDim.new(0, 4)
-	dropdownCorner.Parent = dropdown
-	
-	local dropdownPadding = Instance.new("UIPadding")
-	dropdownPadding.PaddingLeft = UDim.new(0, 8)
-	dropdownPadding.Parent = dropdown
-	
-	local optionsFrame = Instance.new("ScrollingFrame")
-	optionsFrame.Name = "OptionsFrame"
-	optionsFrame.Size = UDim2_new(1, -20, 0, math.min(#options * 25, 100))
-	optionsFrame.Position = UDim2_new(0, 10, 0, 48)
-	optionsFrame.BackgroundColor3 = Color3_fromRGB(20, 20, 28)
-	optionsFrame.BorderSizePixel = 0
-	optionsFrame.ScrollBarThickness = 3
-	optionsFrame.ScrollBarImageColor3 = Color3_fromRGB(80, 80, 100)
-	optionsFrame.Visible = false
-	optionsFrame.ZIndex = 10
-	optionsFrame.Parent = container
-	
-	local optionsCorner = Instance.new("UICorner")
-	optionsCorner.CornerRadius = UDim.new(0, 4)
-	optionsCorner.Parent = optionsFrame
-	
-	local optionsLayout = Instance.new("UIListLayout")
-	optionsLayout.Padding = UDim.new(0, 2)
-	optionsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-	optionsLayout.Parent = optionsFrame
-	
-	for _, option in ipairs(options) do
-		local optionBtn = Instance.new("TextButton")
-		optionBtn.Size = UDim2_new(1, 0, 0, 23)
-		optionBtn.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
-		optionBtn.Text = option
-		optionBtn.Font = Enum.Font.Gotham
-		optionBtn.TextSize = 10
-		optionBtn.TextColor3 = Color3_white
-		optionBtn.BorderSizePixel = 0
-		optionBtn.AutoButtonColor = false
-		optionBtn.Parent = optionsFrame
-		
-		optionBtn.MouseEnter:Connect(function()
-			optionBtn.BackgroundColor3 = Color3_fromRGB(35, 35, 45)
-		end)
-		
-		optionBtn.MouseLeave:Connect(function()
-			optionBtn.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
-		end)
-		
-		optionBtn.MouseButton1Click:Connect(function()
-			dropdown.Text = option .. "  ▼"
-			optionsFrame.Visible = false
-			container.Size = UDim2_new(1, 0, 0, 50)
-			
-			-- Atualizar o estado
-			if labelText == "Farm Position" then
-				state.autofarmMode = option
-			end
-		end)
+-- ===== CONFIG SYSTEM =====
+local ConfigSystem = {
+	CurrentConfigName = "default",
+	Configs = {},
+	ConfigsFolder = nil
+}
+
+-- Inicializar sistema de configurações
+local function initConfigSystem()
+	-- Verificar se writefile/readfile estão disponíveis
+	if not writefile or not readfile then
+		warn("[CyberHub] Sistema de arquivos não disponível")
+		return false
 	end
 	
-	optionsFrame.CanvasSize = UDim2.new(0, 0, 0, #options * 25)
-	
-	dropdown.MouseButton1Click:Connect(function()
-		optionsFrame.Visible = not optionsFrame.Visible
-		if optionsFrame.Visible then
-			container.Size = UDim2_new(1, 0, 0, 50 + math.min(#options * 25, 100) + 5)
-		else
-			container.Size = UDim2_new(1, 0, 0, 50)
+	-- Criar pasta raiz se não existir
+	if not isfolder or not isfolder("CyberHub") then
+		if makefolder then
+			makefolder("CyberHub")
 		end
+	end
+	
+	-- Criar pasta de configs se não existir
+	if not isfolder(CONFIG.CONFIGS_FOLDER_NAME) then
+		if makefolder then
+			makefolder(CONFIG.CONFIGS_FOLDER_NAME)
+		end
+	end
+	
+	ConfigSystem.ConfigsFolder = CONFIG.CONFIGS_FOLDER_NAME
+	return true
+end
+
+-- Salvar configuração atual
+local function saveConfig(configName)
+	if not writefile then
+		return false, "Sistema de arquivos não disponível"
+	end
+	
+	if not configName or configName == "" then
+		return false, "Nome da configuração inválido"
+	end
+	
+	-- Validar nome do arquivo (remover caracteres inválidos)
+	configName = configName:gsub("[^%w%s_-]", ""):gsub("%s+", "_")
+	if configName == "" then
+		return false, "Nome da configuração inválido"
+	end
+	
+	-- Coletar estado atual
+	local configData = {
+		version = "1.0",
+		timestamp = os.time(),
+		autofarmEnabled = state.autofarmEnabled,
+		autofarmMode = state.autofarmMode,
+		autofarmDistance = state.autofarmDistance,
+		infiniteJumpEnabled = state.infiniteJumpEnabled,
+		speedEnabled = state.speedEnabled,
+		m1MacroEnabled = state.m1MacroEnabled,
+		espEnabled = state.espEnabled,
+		tracersEnabled = state.tracersEnabled,
+		healthBarsEnabled = state.healthBarsEnabled,
+		lockOnEnabled = state.lockOnEnabled,
+		speedValue = state.speedValue,
+		m1ClickDelay = state.m1ClickDelay,
+		noClipEnabled = noClipEnabled,
+		playerESPEnabled = playerESPEnabled,
+		fovEnabled = fovEnabled
+	}
+	
+	-- Converter para JSON manualmente (sem HttpService para evitar erros)
+	local jsonData = "{\n"
+	for key, value in pairs(configData) do
+		if type(value) == "string" then
+			jsonData = jsonData .. '  "' .. key .. '": "' .. value .. '",\n'
+		elseif type(value) == "boolean" then
+			jsonData = jsonData .. '  "' .. key .. '": ' .. tostring(value) .. ',\n'
+		elseif type(value) == "number" then
+			jsonData = jsonData .. '  "' .. key .. '": ' .. value .. ',\n'
+		end
+	end
+	jsonData = jsonData:sub(1, -3) .. "\n}" -- Remover última vírgula
+	
+	-- Caminho do arquivo
+	local filePath = ConfigSystem.ConfigsFolder .. "/" .. configName .. ".json"
+	
+	-- Salvar arquivo
+	local success, errorMsg = pcall(function()
+		writefile(filePath, jsonData)
 	end)
 	
-	return container, dropdown
+	if success then
+		ConfigSystem.CurrentConfigName = configName
+		return true, "Configuração '" .. configName .. "' salva com sucesso!"
+	else
+		return false, "Erro ao salvar: " .. tostring(errorMsg)
+	end
+end
+
+-- Carregar configuração
+local function loadConfig(configName)
+	if not readfile then
+		return false, "Sistema de arquivos não disponível"
+	end
+	
+	if not configName then
+		return false, "Nome da configuração não especificado"
+	end
+	
+	-- Caminho do arquivo
+	local filePath = ConfigSystem.ConfigsFolder .. "/" .. configName .. ".json"
+	
+	-- Verificar se o arquivo existe
+	if not isfile or not isfile(filePath) then
+		return false, "Configuração '" .. configName .. "' não encontrada"
+	end
+	
+	-- Ler arquivo
+	local jsonData
+	local success, errorMsg = pcall(function()
+		jsonData = readfile(filePath)
+	end)
+	
+	if not success or not jsonData then
+		return false, "Erro ao ler configuração: " .. tostring(errorMsg)
+	end
+	
+	-- Converter de JSON manualmente
+	local configData = {}
+	
+	-- Parse simples do JSON
+	for line in jsonData:gmatch("[^\r\n]+") do
+		local key, value = line:match('"%s*"([^"]+)"%s*":%s*(.+)')
+		if key and value then
+			value = value:gsub('^"', ''):gsub('"$', ''):gsub(',$', '')
+			
+			if value == "true" then
+				configData[key] = true
+			elseif value == "false" then
+				configData[key] = false
+			elseif tonumber(value) then
+				configData[key] = tonumber(value)
+			else
+				configData[key] = value
+			end
+		end
+	end
+	
+	-- Aplicar configuração (com fallbacks)
+	state.autofarmEnabled = configData.autofarmEnabled or false
+	state.autofarmMode = configData.autofarmMode or "Behind"
+	state.autofarmDistance = configData.autofarmDistance or 8
+	state.infiniteJumpEnabled = configData.infiniteJumpEnabled or false
+	state.speedEnabled = configData.speedEnabled or false
+	state.m1MacroEnabled = configData.m1MacroEnabled or false
+	state.espEnabled = configData.espEnabled or false
+	state.tracersEnabled = configData.tracersEnabled or false
+	state.healthBarsEnabled = configData.healthBarsEnabled or false
+	state.lockOnEnabled = configData.lockOnEnabled or false
+	state.speedValue = configData.speedValue or 160
+	state.m1ClickDelay = configData.m1ClickDelay or 0.15
+	noClipEnabled = configData.noClipEnabled or false
+	playerESPEnabled = configData.playerESPEnabled or false
+	fovEnabled = configData.fovEnabled or false
+	
+	-- Atualizar toggles visuais
+	for toggleName, enabled in pairs({
+		autofarm = state.autofarmEnabled,
+		lockOn = state.lockOnEnabled,
+		m1Macro = state.m1MacroEnabled,
+		speed = state.speedEnabled,
+		infiniteJump = state.infiniteJumpEnabled,
+		noClip = noClipEnabled,
+		esp = state.espEnabled,
+		tracers = state.tracersEnabled,
+		healthBars = state.healthBarsEnabled,
+		playerESP = playerESPEnabled,
+		fov = fovEnabled
+	}) do
+		if toggleUpdateFunctions[toggleName] then
+			toggleUpdateFunctions[toggleName](enabled)
+		end
+	end
+	
+	-- Atualizar sliders
+	autofarmDistValueLabel.Text = tostring(state.autofarmDistance)
+	local autofarmPercent = (state.autofarmDistance - 1) / (25 - 1)
+	autofarmDistSliderFill.Size = UDim2_new(autofarmPercent, 0, 1, 0)
+	
+	m1ValueLabel.Text = tostring(state.m1ClickDelay)
+	local m1Percent = (state.m1ClickDelay - 0.05) / (1 - 0.05)
+	m1SliderFill.Size = UDim2_new(m1Percent, 0, 1, 0)
+	
+	speedValueLabel.Text = tostring(state.speedValue)
+	local speedPercent = (state.speedValue - 50) / (300 - 50)
+	speedSliderFill.Size = UDim2_new(speedPercent, 0, 1, 0)
+	
+	-- Atualizar botões de modo de farm
+	updateFarmPositionVisuals()
+	
+	ConfigSystem.CurrentConfigName = configName
+	return true, "Configuração '" .. configName .. "' carregada com sucesso!"
+end
+
+-- Sobrescrever configuração
+local function overwriteConfig(configName)
+	if not configName then
+		return false, "Selecione uma configuração para sobrescrever"
+	end
+	
+	-- Verificar se a configuração existe
+	local filePath = ConfigSystem.ConfigsFolder .. "/" .. configName .. ".json"
+	if not isfile or not isfile(filePath) then
+		return false, "Configuração '" .. configName .. "' não encontrada"
+	end
+	
+	-- Salvar sobre a configuração existente
+	return saveConfig(configName)
+end
+
+-- Listar configurações disponíveis
+local function getConfigList()
+	local configs = {}
+	
+	-- Verificar se a pasta existe
+	if not isfolder or not isfolder(ConfigSystem.ConfigsFolder) then
+		return configs
+	end
+	
+	-- Listar arquivos .json
+	local success, files = pcall(function()
+		return listfiles(ConfigSystem.ConfigsFolder)
+	end)
+	
+	if not success or not files then
+		return configs
+	end
+	
+	for _, filePath in ipairs(files) do
+		-- Extrair nome do arquivo sem extensão
+		local fileName = filePath:match("([^/\\]+)%.json$")
+		if fileName then
+			table.insert(configs, fileName)
+		end
+	end
+	
+	table.sort(configs)
+	return configs
 end
 
 -- ===== CONFIGS PAGE UI =====
@@ -1583,11 +1513,17 @@ local function updateConfigListUI()
 	end
 end
 
--- Conectar botões
+-- Conectar botões (com verificação de sistema de arquivos)
 createConfigBtn.MouseButton1Click:Connect(function()
 	local configName = configNameTextBox.Text
 	if configName == "" then
 		configStatusLabel.Text = "Digite um nome para a configuração"
+		configStatusLabel.TextColor3 = Color3_fromRGB(255, 120, 120)
+		return
+	end
+	
+	if not writefile then
+		configStatusLabel.Text = "Sistema de arquivos não disponível"
 		configStatusLabel.TextColor3 = Color3_fromRGB(255, 120, 120)
 		return
 	end
@@ -1612,6 +1548,12 @@ refreshListBtn.MouseButton1Click:Connect(function()
 end)
 
 loadConfigBtn.MouseButton1Click:Connect(function()
+	if not readfile then
+		configStatusLabel.Text = "Sistema de arquivos não disponível"
+		configStatusLabel.TextColor3 = Color3_fromRGB(255, 120, 120)
+		return
+	end
+	
 	if not selectedConfig then
 		configStatusLabel.Text = "Selecione uma configuração primeiro"
 		configStatusLabel.TextColor3 = Color3_fromRGB(255, 120, 120)
@@ -1629,6 +1571,12 @@ loadConfigBtn.MouseButton1Click:Connect(function()
 end)
 
 overwriteConfigBtn.MouseButton1Click:Connect(function()
+	if not writefile then
+		configStatusLabel.Text = "Sistema de arquivos não disponível"
+		configStatusLabel.TextColor3 = Color3_fromRGB(255, 120, 120)
+		return
+	end
+	
 	if not selectedConfig then
 		configStatusLabel.Text = "Selecione uma configuração primeiro"
 		configStatusLabel.TextColor3 = Color3_fromRGB(255, 120, 120)
@@ -2327,11 +2275,13 @@ screenGui.Destroying:Connect(function()
 end)
 
 -- ===== STARTUP =====
--- Inicializar sistema de configurações
+-- Inicializar sistema de configurações de forma segura
 task.spawn(function()
 	task.wait(0.5)
-	initConfigSystem()
-	updateConfigListUI()
+	local success = pcall(initConfigSystem)
+	if success then
+		pcall(updateConfigListUI)
+	end
 end)
 
 print("═══════════════════════════════════════════════")
