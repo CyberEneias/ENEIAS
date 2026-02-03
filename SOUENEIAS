@@ -1819,6 +1819,13 @@ state.connections.visualUpdate = RunService.RenderStepped:Connect(function()
 end)
 
 -- ===== INPUT HANDLING =====
+UserInputService.JumpRequest:Connect(function()
+	if state.infiniteJumpEnabled then
+		local _, hum, _ = getCharComponents()
+		if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+	end
+end)
+
 UserInputService.InputBegan:Connect(function(input, processed)
 	if processed then return end
 
@@ -1830,22 +1837,8 @@ UserInputService.InputBegan:Connect(function(input, processed)
 	if input.KeyCode == Enum.KeyCode.F2 then
 		toggleUpdateFunctions.m1Macro(not state.m1MacroEnabled)
 	end
-	
-	-- Adição: F3 para ativar/desativar o autofarm
-	if input.KeyCode == Enum.KeyCode.F3 then
-		toggleUpdateFunctions.autofarm(not state.autofarmEnabled)
-	end
-	
-	-- Adição: Numpad1 para ativar/desativar speed boost
-	if input.KeyCode == Enum.KeyCode.NumpadOne then
-		toggleUpdateFunctions.speed(not state.speedEnabled)
-	end
-	
-	-- Adição: Numpad2 para ativar/desativar infinite jump
-	if input.KeyCode == Enum.KeyCode.NumpadTwo then
-		toggleUpdateFunctions.infiniteJump(not state.infiniteJumpEnabled)
-	end
 end)
+
 -- ===== CHARACTER EVENTS =====
 player.CharacterAdded:Connect(function(char)
 	invalidateCharCache()
