@@ -666,7 +666,10 @@ end
 
 -- ===== CLEANUP OLD GUI =====
 pcall(function()
-	CoreGui:FindFirstChild(CONFIG.GUI_NAME):Destroy()
+	local oldGui = CoreGui:FindFirstChild(CONFIG.GUI_NAME)
+	if oldGui then
+		oldGui:Destroy()
+	end
 end)
 
 -- ===== GUI CREATION =====
