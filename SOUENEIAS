@@ -40,7 +40,7 @@ local Color3_black = Color3.new(0,0,0)
 -- ===== STATE =====
 local state = {
 	autofarmEnabled = false,
-	autofarmMode = "Above", -- MODIFICADO: Começa em "Above" em vez de "Behind"
+	autofarmMode = "Above", -- "Behind" or "Above" -- MODIFICADO: Agora começa em "Above"
 	autofarmDistance = 8, -- distância entre player e NPC (Behind = atrás, Above = altura) - alterável por slider
 	infiniteJumpEnabled = false,
 	speedEnabled = false,
@@ -666,10 +666,7 @@ end
 
 -- ===== CLEANUP OLD GUI =====
 pcall(function()
-	local oldGui = CoreGui:FindFirstChild(CONFIG.GUI_NAME)
-	if oldGui then
-		oldGui:Destroy()
-	end
+	CoreGui:FindFirstChild(CONFIG.GUI_NAME):Destroy()
 end)
 
 -- ===== GUI CREATION =====
@@ -1080,6 +1077,114 @@ local function createButton(parent, text, color)
 	return btn
 end
 
+local function createDropdown(parent, labelText, options, defaultOption)
+	local container = Instance.new("Frame")
+	container.Size = UDim2_new(1, 0, 0, 50)
+	container.BackgroundColor3 = Color3_fromRGB(18, 18, 25)
+	container.BorderSizePixel = 0
+	container.Parent = parent
+	
+	local containerCorner = Instance.new("UICorner")
+	containerCorner.CornerRadius = UDim.new(0, 6)
+	containerCorner.Parent = container
+	
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2_new(1, -20, 0, 18)
+	label.Position = UDim2_new(0, 10, 0, 6)
+	label.BackgroundTransparency = 1
+	label.Text = labelText
+	label.Font = Enum.Font.GothamBold
+	label.TextSize = 11
+	label.TextColor3 = Color3_fromRGB(180, 180, 200)
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = container
+	
+	local dropdown = Instance.new("TextButton")
+	dropdown.Size = UDim2_new(1, -20, 0, 22)
+	dropdown.Position = UDim2_new(0, 10, 0, 24)
+	dropdown.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
+	dropdown.Text = defaultOption .. "  ▼"
+	dropdown.Font = Enum.Font.Gotham
+	dropdown.TextSize = 11
+	dropdown.TextColor3 = Color3_white
+	dropdown.BorderSizePixel = 0
+	dropdown.Parent = container
+	
+	local dropdownCorner = Instance.new("UICorner")
+	dropdownCorner.CornerRadius = UDim.new(0, 4)
+	dropdownCorner.Parent = dropdown
+	
+	local dropdownPadding = Instance.new("UIPadding")
+	dropdownPadding.PaddingLeft = UDim.new(0, 8)
+	dropdownPadding.Parent = dropdown
+	
+	local optionsFrame = Instance.new("ScrollingFrame")
+	optionsFrame.Name = "OptionsFrame"
+	optionsFrame.Size = UDim2_new(1, -20, 0, math.min(#options * 25, 100))
+	optionsFrame.Position = UDim2_new(0, 10, 0, 48)
+	optionsFrame.BackgroundColor3 = Color3_fromRGB(20, 20, 28)
+	optionsFrame.BorderSizePixel = 0
+	optionsFrame.ScrollBarThickness = 3
+	optionsFrame.ScrollBarImageColor3 = Color3_fromRGB(80, 80, 100)
+	optionsFrame.Visible = false
+	optionsFrame.ZIndex = 10
+	optionsFrame.Parent = container
+	
+	local optionsCorner = Instance.new("UICorner")
+	optionsCorner.CornerRadius = UDim.new(0, 4)
+	optionsCorner.Parent = optionsFrame
+	
+	local optionsLayout = Instance.new("UIListLayout")
+	optionsLayout.Padding = UDim.new(0, 2)
+	optionsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	optionsLayout.Parent = optionsFrame
+	
+	for _, option in ipairs(options) do
+		local optionBtn = Instance.new("TextButton")
+		optionBtn.Size = UDim2_new(1, 0, 0, 23)
+		optionBtn.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
+		optionBtn.Text = option
+		optionBtn.Font = Enum.Font.Gotham
+		optionBtn.TextSize = 10
+		optionBtn.TextColor3 = Color3_white
+		optionBtn.BorderSizePixel = 0
+		optionBtn.AutoButtonColor = false
+		optionBtn.Parent = optionsFrame
+		
+		optionBtn.MouseEnter:Connect(function()
+			optionBtn.BackgroundColor3 = Color3_fromRGB(35, 35, 45)
+		end)
+		
+		optionBtn.MouseLeave:Connect(function()
+			optionBtn.BackgroundColor3 = Color3_fromRGB(25, 25, 35)
+		end)
+		
+		optionBtn.MouseButton1Click:Connect(function()
+			dropdown.Text = option .. "  ▼"
+			optionsFrame.Visible = false
+			container.Size = UDim2_new(1, 0, 0, 50)
+			
+			-- Atualizar o estado
+			if labelText == "Farm Position" then
+				state.autofarmMode = option
+			end
+		end)
+	end
+	
+	optionsFrame.CanvasSize = UDim2.new(0, 0, 0, #options * 25)
+	
+	dropdown.MouseButton1Click:Connect(function()
+		optionsFrame.Visible = not optionsFrame.Visible
+		if optionsFrame.Visible then
+			container.Size = UDim2_new(1, 0, 0, 50 + math.min(#options * 25, 100) + 5)
+		else
+			container.Size = UDim2_new(1, 0, 0, 50)
+		end
+	end)
+	
+	return container, dropdown
+end
+
 -- ===== COMBAT PAGE =====
 createSectionHeader(combatPage, "Auto Farm Settings")
 
@@ -1133,11 +1238,11 @@ local farmModeBehindBtn = Instance.new("TextButton")
 farmModeBehindBtn.Name = "Option_Behind"
 farmModeBehindBtn.LayoutOrder = 1
 farmModeBehindBtn.Size = UDim2_new(0, 130, 0, 28)
-farmModeBehindBtn.BackgroundColor3 = Color3_fromRGB(40, 40, 55) -- MODIFICADO: Inicia desativado
+farmModeBehindBtn.BackgroundColor3 = Color3_fromRGB(40, 40, 55) -- MODIFICADO: Agora começa desativado (Above é o padrão)
 farmModeBehindBtn.Text = "Behind"
 farmModeBehindBtn.Font = Enum.Font.GothamBold
 farmModeBehindBtn.TextSize = 11
-farmModeBehindBtn.TextColor3 = Color3_fromRGB(180, 180, 200) -- MODIFICADO: Inicia com cor desativada
+farmModeBehindBtn.TextColor3 = Color3_fromRGB(180, 180, 200)
 farmModeBehindBtn.BorderSizePixel = 0
 farmModeBehindBtn.AutoButtonColor = false
 farmModeBehindBtn.Parent = farmModeButtonsFrame
@@ -1150,11 +1255,11 @@ local farmModeAboveBtn = Instance.new("TextButton")
 farmModeAboveBtn.Name = "Option_Above"
 farmModeAboveBtn.LayoutOrder = 2
 farmModeAboveBtn.Size = UDim2_new(0, 130, 0, 28)
-farmModeAboveBtn.BackgroundColor3 = Color3_fromRGB(100, 180, 255) -- MODIFICADO: Inicia ativado
+farmModeAboveBtn.BackgroundColor3 = Color3_fromRGB(100, 180, 255) -- MODIFICADO: Agora começa ativado (Above é o padrão)
 farmModeAboveBtn.Text = "Above"
 farmModeAboveBtn.Font = Enum.Font.GothamBold
 farmModeAboveBtn.TextSize = 11
-farmModeAboveBtn.TextColor3 = Color3_white -- MODIFICADO: Inicia com cor ativada
+farmModeAboveBtn.TextColor3 = Color3_white
 farmModeAboveBtn.BorderSizePixel = 0
 farmModeAboveBtn.AutoButtonColor = false
 farmModeAboveBtn.Parent = farmModeButtonsFrame
@@ -1732,19 +1837,19 @@ UserInputService.InputBegan:Connect(function(input, processed)
 	if input.KeyCode == Enum.KeyCode.F2 then
 		toggleUpdateFunctions.m1Macro(not state.m1MacroEnabled)
 	end
-	
-	-- NOVO: Ativar/Desativar Autofarm com F3
+
+	-- NOVO: F3 para ativar/desativar autofarm
 	if input.KeyCode == Enum.KeyCode.F3 then
 		toggleUpdateFunctions.autofarm(not state.autofarmEnabled)
 	end
-	
-	-- NOVO: Ativar/Desativar Infinite Jump com Numpad 1
-	if input.KeyCode == Enum.KeyCode.NumPadOne then
+
+	-- NOVO: Numpad1 para ativar/desativar infinite jump
+	if input.KeyCode == Enum.KeyCode.Numpad1 then
 		toggleUpdateFunctions.infiniteJump(not state.infiniteJumpEnabled)
 	end
-	
-	-- NOVO: Ativar/Desativar Speed Boost com Numpad 2
-	if input.KeyCode == Enum.KeyCode.NumPadTwo then
+
+	-- NOVO: Numpad2 para ativar/desativar speed boost
+	if input.KeyCode == Enum.KeyCode.Numpad2 then
 		toggleUpdateFunctions.speed(not state.speedEnabled)
 	end
 end)
@@ -1787,6 +1892,6 @@ print("  👁️  Visual: ESP | Tracers | Health Bars")
 print("  📍  Teleport: Ultra Smooth (Anti-Kick)")
 print("═══════════════════════════════════════════════")
 print("  F1 - Toggle GUI | F2 - Toggle M1 Macro")
-print("  F3 - Toggle Autofarm | Numpad1 - Inf Jump")
+print("  F3 - Toggle Auto Farm | Numpad1 - Infinite Jump")
 print("  Numpad2 - Speed Boost")
 print("═══════════════════════════════════════════════")
