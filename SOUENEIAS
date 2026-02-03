@@ -14,11 +14,14 @@ local player = Players.LocalPlayer
 if not player then return end
 
 -- ===== VELOCITY-SAFE FILE SYSTEM =====
-local _require = require
 local readFile, writeFile, isFile, isFolderExists, createFolder
 
 do
-	local ok, fs = pcall(_require, "filesystem")
+	local _require = rawget(_G, "require")
+	local ok, fs = false, nil
+	if _require then
+		ok, fs = pcall(_require, "filesystem")
+	end
 	if ok and fs then
 		-- Velocity environment
 		readFile = function(path)
@@ -746,7 +749,7 @@ local function serializeTable(t, indent)
 				table.insert(parts, pad2 .. tostring(v))
 			end
 		end
-		return "{\n" .. table.concat(parts, ",\n") .. "\n" .. pad .. "}"
+		return "[\n" .. table.concat(parts, ",\n") .. "\n" .. pad .. "]"
 	else
 		-- dict
 		local keys = {}
@@ -775,7 +778,9 @@ local function deserializeTable(str)
 	-- strip outer whitespace
 	str = str:match("^%s*(.-)%s*$")
 
-	local function parseValue(s, pos)
+	local parseValue, parseObject, parseArray
+
+	parseValue = function(s, pos)
 		-- skip whitespace
 		pos = s:match("^%s*()", pos)
 
@@ -811,7 +816,7 @@ local function deserializeTable(str)
 		return nil, pos
 	end
 
-	function parseObject(s, pos)
+	parseObject = function(s, pos)
 		local t = {}
 		pos = pos + 1 -- skip {
 		pos = s:match("^%s*()", pos)
@@ -846,7 +851,7 @@ local function deserializeTable(str)
 		return t, pos
 	end
 
-	function parseArray(s, pos)
+	parseArray = function(s, pos)
 		local t = {}
 		pos = pos + 1
 		pos = s:match("^%s*()", pos)
@@ -1983,7 +1988,7 @@ end
 
 local refreshListBtn  = createSmallBtn(actionBtnsContainer, "🔄 Refresh", Color3_fromRGB(80, 140, 200))
 local loadConfigBtn   = createSmallBtn(actionBtnsContainer, "📂 Load",    Color3_fromRGB(100, 180, 80))
-local overwriteBtn    = createSmallBtn(actionBtnsContainer, "✏️ Overwrite", Color3_fromRGB(200, 140, 60))
+local overwriteBtn    = createSmallBtn(actionBtnsContainer, "~ Overwrite", Color3_fromRGB(200, 140, 60))
 
 -- ===== CONFIG PAGE LOGIC =====
 
@@ -2152,6 +2157,7 @@ end)
 
 -- M1 slider drag
 local m1Dragging = false
+local speedDragging = false
 m1SliderBtn.MouseButton1Down:Connect(function() m1Dragging = true end)
 
 UserInputService.InputEnded:Connect(function(input)
@@ -2214,7 +2220,6 @@ speedToggle.MouseButton1Click:Connect(function()
 	toggleUpdateFunctions.speed(not state.speedEnabled)
 end)
 
-local speedDragging = false
 speedSliderBtn.MouseButton1Down:Connect(function() speedDragging = true end)
 
 UserInputService.InputChanged:Connect(function(input)
