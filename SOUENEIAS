@@ -1837,18 +1837,6 @@ UserInputService.InputBegan:Connect(function(input, processed)
 	if input.KeyCode == Enum.KeyCode.F2 then
 		toggleUpdateFunctions.m1Macro(not state.m1MacroEnabled)
 	end
-
-	if input.KeyCode == Enum.KeyCode.F3 then
-		toggleUpdateFunctions.autofarm(not state.autofarmEnabled)
-	end
-
-	if input.KeyCode == Enum.KeyCode.Keypad1 then
-		toggleUpdateFunctions.speed(not state.speedEnabled)
-	end
-
-	if input.KeyCode == Enum.KeyCode.Keypad2 then
-		toggleUpdateFunctions.infiniteJump(not state.infiniteJumpEnabled)
-	end
 end)
 
 -- ===== CHARACTER EVENTS =====
@@ -1888,6 +1876,5 @@ print("  🚀  Movement: Speed | Infinite Jump | No Clip")
 print("  👁️  Visual: ESP | Tracers | Health Bars")
 print("  📍  Teleport: Ultra Smooth (Anti-Kick)")
 print("═══════════════════════════════════════════════")
-print("  F1 - GUI | F2 - M1 Macro | F3 - Auto Farm")
-print("  Numpad1 - Speed Boost | Numpad2 - Infinite Jump")
+print("  F1 - Toggle GUI | F2 - Toggle M1 Macro")
 print("═══════════════════════════════════════════════")
