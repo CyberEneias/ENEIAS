@@ -40,7 +40,7 @@ local Color3_black = Color3.new(0,0,0)
 -- ===== STATE =====
 local state = {
 	autofarmEnabled = false,
-	autofarmMode = "Above", -- "Behind" or "Above" -- MODIFICADO: Agora começa em "Above"
+	autofarmMode = "Behind", -- "Behind" or "Above"
 	autofarmDistance = 8, -- distância entre player e NPC (Behind = atrás, Above = altura) - alterável por slider
 	infiniteJumpEnabled = false,
 	speedEnabled = false,
@@ -1238,11 +1238,11 @@ local farmModeBehindBtn = Instance.new("TextButton")
 farmModeBehindBtn.Name = "Option_Behind"
 farmModeBehindBtn.LayoutOrder = 1
 farmModeBehindBtn.Size = UDim2_new(0, 130, 0, 28)
-farmModeBehindBtn.BackgroundColor3 = Color3_fromRGB(40, 40, 55) -- MODIFICADO: Agora começa desativado (Above é o padrão)
+farmModeBehindBtn.BackgroundColor3 = Color3_fromRGB(100, 180, 255)
 farmModeBehindBtn.Text = "Behind"
 farmModeBehindBtn.Font = Enum.Font.GothamBold
 farmModeBehindBtn.TextSize = 11
-farmModeBehindBtn.TextColor3 = Color3_fromRGB(180, 180, 200)
+farmModeBehindBtn.TextColor3 = Color3_white
 farmModeBehindBtn.BorderSizePixel = 0
 farmModeBehindBtn.AutoButtonColor = false
 farmModeBehindBtn.Parent = farmModeButtonsFrame
@@ -1255,11 +1255,11 @@ local farmModeAboveBtn = Instance.new("TextButton")
 farmModeAboveBtn.Name = "Option_Above"
 farmModeAboveBtn.LayoutOrder = 2
 farmModeAboveBtn.Size = UDim2_new(0, 130, 0, 28)
-farmModeAboveBtn.BackgroundColor3 = Color3_fromRGB(100, 180, 255) -- MODIFICADO: Agora começa ativado (Above é o padrão)
+farmModeAboveBtn.BackgroundColor3 = Color3_fromRGB(40, 40, 55)
 farmModeAboveBtn.Text = "Above"
 farmModeAboveBtn.Font = Enum.Font.GothamBold
 farmModeAboveBtn.TextSize = 11
-farmModeAboveBtn.TextColor3 = Color3_white
+farmModeAboveBtn.TextColor3 = Color3_fromRGB(180, 180, 200)
 farmModeAboveBtn.BorderSizePixel = 0
 farmModeAboveBtn.AutoButtonColor = false
 farmModeAboveBtn.Parent = farmModeButtonsFrame
@@ -1819,13 +1819,6 @@ state.connections.visualUpdate = RunService.RenderStepped:Connect(function()
 end)
 
 -- ===== INPUT HANDLING =====
-UserInputService.JumpRequest:Connect(function()
-	if state.infiniteJumpEnabled then
-		local _, hum, _ = getCharComponents()
-		if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
-	end
-end)
-
 UserInputService.InputBegan:Connect(function(input, processed)
 	if processed then return end
 
@@ -1837,23 +1830,22 @@ UserInputService.InputBegan:Connect(function(input, processed)
 	if input.KeyCode == Enum.KeyCode.F2 then
 		toggleUpdateFunctions.m1Macro(not state.m1MacroEnabled)
 	end
-
-	-- NOVO: F3 para ativar/desativar autofarm
+	
+	-- Adição: F3 para ativar/desativar o autofarm
 	if input.KeyCode == Enum.KeyCode.F3 then
 		toggleUpdateFunctions.autofarm(not state.autofarmEnabled)
 	end
-
-	-- NOVO: Numpad1 para ativar/desativar infinite jump
-	if input.KeyCode == Enum.KeyCode.Numpad1 then
-		toggleUpdateFunctions.infiniteJump(not state.infiniteJumpEnabled)
-	end
-
-	-- NOVO: Numpad2 para ativar/desativar speed boost
-	if input.KeyCode == Enum.KeyCode.Numpad2 then
+	
+	-- Adição: Numpad1 para ativar/desativar speed boost
+	if input.KeyCode == Enum.KeyCode.NumpadOne then
 		toggleUpdateFunctions.speed(not state.speedEnabled)
 	end
+	
+	-- Adição: Numpad2 para ativar/desativar infinite jump
+	if input.KeyCode == Enum.KeyCode.NumpadTwo then
+		toggleUpdateFunctions.infiniteJump(not state.infiniteJumpEnabled)
+	end
 end)
-
 -- ===== CHARACTER EVENTS =====
 player.CharacterAdded:Connect(function(char)
 	invalidateCharCache()
@@ -1892,6 +1884,4 @@ print("  👁️  Visual: ESP | Tracers | Health Bars")
 print("  📍  Teleport: Ultra Smooth (Anti-Kick)")
 print("═══════════════════════════════════════════════")
 print("  F1 - Toggle GUI | F2 - Toggle M1 Macro")
-print("  F3 - Toggle Auto Farm | Numpad1 - Infinite Jump")
-print("  Numpad2 - Speed Boost")
 print("═══════════════════════════════════════════════")
