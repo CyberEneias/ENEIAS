@@ -40,10 +40,10 @@ local Color3_black = Color3.new(0,0,0)
 -- ===== STATE =====
 local state = {
 	autofarmEnabled = false,
-	autofarmMode = "Behind", -- "Behind" or "Above"
+	autofarmMode = "Above", -- "Behind" or "Above"
 	autofarmDistance = 8, -- distância entre player e NPC (Behind = atrás, Above = altura) - alterável por slider
-	infiniteJumpEnabled = false,
-	speedEnabled = false,
+	infiniteJumpEnabled = true,
+	speedEnabled = true,
 	m1MacroEnabled = false,
 	espEnabled = false,
 	tracersEnabled = false,
