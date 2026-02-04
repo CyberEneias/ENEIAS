@@ -1837,6 +1837,18 @@ UserInputService.InputBegan:Connect(function(input, processed)
 	if input.KeyCode == Enum.KeyCode.F2 then
 		toggleUpdateFunctions.m1Macro(not state.m1MacroEnabled)
 	end
+
+	if input.KeyCode == Enum.KeyCode.F3 then
+		toggleUpdateFunctions.autofarm(not state.autofarmEnabled)
+	end
+	
+	if input.KeyCode == Enum.KeyCode.NumpadOne then
+		toggleUpdateFunctions.speed(not state.speedEnabled)
+	end
+	
+	if input.KeyCode == Enum.KeyCode.NumpadTwo then
+		toggleUpdateFunctions.infiniteJump(not state.infiniteJumpEnabled)
+	end
 end)
 
 -- ===== CHARACTER EVENTS =====
