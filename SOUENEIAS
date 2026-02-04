@@ -1842,11 +1842,11 @@ UserInputService.InputBegan:Connect(function(input, processed)
 		toggleUpdateFunctions.autofarm(not state.autofarmEnabled)
 	end
 	
-	if input.KeyCode == Enum.KeyCode.NumpadOne then
+	if input.KeyCode == Enum.KeyCode.KeypadOne then
 		toggleUpdateFunctions.speed(not state.speedEnabled)
 	end
 	
-	if input.KeyCode == Enum.KeyCode.NumpadTwo then
+	if input.KeyCode == Enum.KeyCode.KeypadTwo then
 		toggleUpdateFunctions.infiniteJump(not state.infiniteJumpEnabled)
 	end
 end)
