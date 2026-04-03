@@ -2,7 +2,7 @@
 --//           CYBER HUB - FFRE EDITION V4.3           --
 --//====================================================--
 --//  Ultra Smooth Teleport (Anti-Kick) + Lock On       --
---//  ESP + Tracers + Health Bars (Workspace.Alive)     --
+--//  ESP + Tracers + Health Bars (Workspace.LivingThings)--
 --//  Dual Autofarm Mode: Behind / Above NPC            --
 --//====================================================--
 
@@ -22,7 +22,7 @@ local Core = (function()
 		TweenService    = game:GetService("TweenService"),
 	}
 
-	-- Configuração central (altere valores aqui)
+	-- Configuração central (caminhos atualizados)
 	local CONFIG = {
 		BACK_DISTANCE         = 3.5,
 		HEIGHT_OFFSET         = 2.5,
@@ -34,8 +34,9 @@ local Core = (function()
 		GUI_NAME              = "CyberHub",
 		TELEPORT_SPEED        = 150,
 		MAX_TELEPORT_DISTANCE = 500,
-		VISUAL_NPC_FOLDER     = workspace:WaitForChild("Alive"),
-		TELEPORT_NPC_FOLDER   = workspace:WaitForChild("LiveNPCS"),
+		-- NOVOS CAMINHOS:
+		VISUAL_NPC_FOLDER     = workspace:WaitForChild("LivingThings"),   -- players + npcs combativos
+		TELEPORT_NPC_FOLDER   = workspace:WaitForChild("Npcs"),           -- npcs para teleporte
 	}
 
 	-- Estado global centralizado (sem variáveis globais soltas)
