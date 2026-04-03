@@ -1,9 +1,10 @@
 --//====================================================--
---//         SIMPLE HUB - SPEED + INFINITE JUMP        --//
+--//      HUB COMPLETO - MAIN + TELEPORT (FFO STYLE)   --//
 --//====================================================--
---//  Exibe o nome da experiência +                     --//
---//  Speed Boost (ajustável) + Infinite Jump          --//
---//  Sem outras funcionalidades.                      --//
+--//  Aba Main: Speed (slider 15-300 + Keypad1)        --//
+--//           Infinite Jump (Keypad2)                 --//
+--//  Aba Teleport: Lista de NPCs (workspace.NPCS)     --//
+--//                Teleporte suave (anti-kick)        --//
 --//====================================================--
 
 local Players = game:GetService("Players")
@@ -13,23 +14,33 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 
--- Obtém o nome da experiência
-local gameName = game.Name
-local success, info = pcall(function()
-    return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId)
-end)
-if success and info and info.Name then
-    gameName = info.Name
+-- ===================== CONFIGURAÇÃO =====================
+local CONFIG = {
+    TELEPORT_SPEED = 150,           -- velocidade do tween (studs/s)
+    MAX_TELEPORT_DISTANCE = 500,     -- distância máxima por chunk
+    NPC_FOLDER_NAME = "NPCS",        -- nome da pasta em workspace
+}
+
+-- Aguarda a pasta de NPCs (opcional, pode não existir)
+local NPCSFolder = workspace:FindFirstChild(CONFIG.NPC_FOLDER_NAME)
+if not NPCSFolder then
+    NPCSFolder = Instance.new("Folder")
+    NPCSFolder.Name = CONFIG.NPC_FOLDER_NAME
+    NPCSFolder.Parent = workspace
+    warn("Pasta 'NPCS' criada em workspace. Adicione modelos de NPC dentro dela.")
 end
 
--- Estado das features
+-- ===================== ESTADO GLOBAL =====================
 local state = {
     speedEnabled = false,
     speedValue = 160,
     infiniteJumpEnabled = false,
+    isTeleporting = false,
+    currentPage = "main",
+    guiVisible = true,
 }
 
--- Cache do personagem
+-- ===================== UTILITÁRIOS =====================
 local charCache = { root = nil, hum = nil, lastUpdate = 0 }
 local function getCharComponents()
     local now = tick()
@@ -42,9 +53,11 @@ local function getCharComponents()
     return charCache.root, charCache.hum
 end
 
--- Conexões ativas
-local connections = {}
+local function invalidateCharCache()
+    charCache.lastUpdate = 0
+end
 
+local connections = {}
 local function disconnect(name)
     if connections[name] then
         connections[name]:Disconnect()
@@ -52,7 +65,14 @@ local function disconnect(name)
     end
 end
 
--- Speed loop (igual ao FFO)
+local function cleanAllConnections()
+    for name, conn in pairs(connections) do
+        if conn then pcall(conn.Disconnect, conn) end
+    end
+    table.clear(connections)
+end
+
+-- ===================== FEATURE: SPEED =====================
 local function speedLoop()
     if not state.speedEnabled then return end
     local root, hum = getCharComponents()
@@ -65,7 +85,6 @@ local function speedLoop()
     end
 end
 
--- Ativa/desativa Speed
 local function setSpeed(enabled)
     state.speedEnabled = enabled
     if enabled then
@@ -76,12 +95,86 @@ local function setSpeed(enabled)
     end
 end
 
--- Ativa/desativa Infinite Jump (evento JumpRequest)
+-- ===================== FEATURE: INFINITE JUMP =====================
 local function setInfiniteJump(enabled)
     state.infiniteJumpEnabled = enabled
 end
 
--- Cria GUI
+-- Evento global de pulo
+UserInputService.JumpRequest:Connect(function()
+    if state.infiniteJumpEnabled then
+        local _, hum = getCharComponents()
+        if hum then
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+    end
+end)
+
+-- ===================== TELEPORT SYSTEM =====================
+local function ultraSmoothTeleport(targetPosition)
+    if state.isTeleporting then return false end
+    local root = getCharComponents()
+    if not root then return false end
+
+    state.isTeleporting = true
+    local startPos = root.Position
+    local distance = (targetPosition - startPos).Magnitude
+
+    -- Distância curta: teleporte direto
+    if distance < 10 then
+        root.CFrame = CFrame.new(targetPosition)
+        state.isTeleporting = false
+        return true
+    end
+
+    local travelTime = distance / CONFIG.TELEPORT_SPEED
+
+    if distance > CONFIG.MAX_TELEPORT_DISTANCE then
+        -- Divide em chunks
+        local direction = (targetPosition - startPos).Unit
+        local numChunks = math.ceil(distance / CONFIG.MAX_TELEPORT_DISTANCE)
+        for i = 1, numChunks do
+            if not state.isTeleporting then break end
+            local chunkTarget = (i == numChunks) and targetPosition or (startPos + direction * CONFIG.MAX_TELEPORT_DISTANCE * i)
+            local chunkTime = (chunkTarget - root.Position).Magnitude / CONFIG.TELEPORT_SPEED
+            local tween = TweenService:Create(root, TweenInfo.new(chunkTime, Enum.EasingStyle.Linear), { CFrame = CFrame.new(chunkTarget) })
+            tween:Play()
+            tween.Completed:Wait()
+            task.wait(0.1)
+        end
+    else
+        local tween = TweenService:Create(root, TweenInfo.new(travelTime, Enum.EasingStyle.Linear), { CFrame = CFrame.new(targetPosition) })
+        tween:Play()
+        tween.Completed:Wait()
+    end
+
+    state.isTeleporting = false
+    return true
+end
+
+local function teleportToNPC(npcModel)
+    local rootPart = npcModel:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return false, "NPC sem HumanoidRootPart" end
+    local targetPos = rootPart.Position + Vector3.new(0, 2, 3) -- posição ao lado/atrás
+    task.spawn(function()
+        ultraSmoothTeleport(targetPos)
+    end)
+    return true, "Teleportando..."
+end
+
+local function getNPCList()
+    local list = {}
+    for _, child in ipairs(NPCSFolder:GetChildren()) do
+        if child:IsA("Model") and child:FindFirstChild("HumanoidRootPart") then
+            table.insert(list, child)
+        end
+    end
+    -- Ordena por nome
+    table.sort(list, function(a, b) return a.Name < b.Name end)
+    return list
+end
+
+-- ===================== GUI =====================
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "SimpleHub"
 screenGui.ResetOnSpawn = false
@@ -90,17 +183,17 @@ screenGui.Parent = CoreGui
 
 -- Frame principal (arrastável)
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 340, 0, 320)
-mainFrame.Position = UDim2.new(0.5, -170, 0.5, -160)
+mainFrame.Size = UDim2.new(0, 360, 0, 460)
+mainFrame.Position = UDim2.new(0.5, -180, 0.5, -230)
 mainFrame.BackgroundColor3 = Color3.fromRGB(13, 13, 18)
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
 mainFrame.Draggable = true
 mainFrame.Parent = screenGui
 
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 10)
-corner.Parent = mainFrame
+local mainCorner = Instance.new("UICorner")
+mainCorner.CornerRadius = UDim.new(0, 10)
+mainCorner.Parent = mainFrame
 
 local stroke = Instance.new("UIStroke")
 stroke.Color = Color3.fromRGB(100, 100, 120)
@@ -123,7 +216,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -50, 1, 0)
 titleLabel.Position = UDim2.new(0, 15, 0, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "✦  SIMPLE HUB  ✦"
+titleLabel.Text = "✦  CYBER LITE  ✦"
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextSize = 13
 titleLabel.TextColor3 = Color3.fromRGB(100, 180, 255)
@@ -148,29 +241,104 @@ closeCorner.Parent = closeBtn
 
 closeBtn.MouseButton1Click:Connect(function()
     screenGui:Destroy()
-    for _, conn in pairs(connections) do
-        if conn then pcall(conn.Disconnect, conn) end
-    end
+    cleanAllConnections()
 end)
 
--- Área de conteúdo (rolável)
-local contentFrame = Instance.new("ScrollingFrame")
-contentFrame.Size = UDim2.new(1, -20, 1, -55)
-contentFrame.Position = UDim2.new(0, 10, 0, 50)
-contentFrame.BackgroundTransparency = 1
-contentFrame.BorderSizePixel = 0
-contentFrame.ScrollBarThickness = 3
-contentFrame.ScrollBarImageColor3 = Color3.fromRGB(80, 80, 100)
-contentFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-contentFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
-contentFrame.Parent = mainFrame
+-- Sidebar
+local sidebar = Instance.new("Frame")
+sidebar.Size = UDim2.new(0, 45, 1, -45)
+sidebar.Position = UDim2.new(0, 5, 0, 43)
+sidebar.BackgroundColor3 = Color3.fromRGB(18, 18, 25)
+sidebar.BorderSizePixel = 0
+sidebar.Parent = mainFrame
 
-local layout = Instance.new("UIListLayout")
-layout.Padding = UDim.new(0, 8)
-layout.SortOrder = Enum.SortOrder.LayoutOrder
-layout.Parent = contentFrame
+local sidebarCorner = Instance.new("UICorner")
+sidebarCorner.CornerRadius = UDim.new(0, 6)
+sidebarCorner.Parent = sidebar
 
--- Função auxiliar para criar toggle (igual ao estilo do FFO)
+local sidebarLayout = Instance.new("UIListLayout")
+sidebarLayout.Padding = UDim.new(0, 6)
+sidebarLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+sidebarLayout.Parent = sidebar
+
+local sidebarPadding = Instance.new("UIPadding")
+sidebarPadding.PaddingTop = UDim.new(0, 8)
+sidebarPadding.Parent = sidebar
+
+local function createSidebarBtn(icon, name)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 35, 0, 35)
+    btn.BackgroundColor3 = Color3.fromRGB(22, 22, 30)
+    btn.Text = icon
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 18
+    btn.TextColor3 = Color3.fromRGB(120, 120, 140)
+    btn.BorderSizePixel = 0
+    btn.AutoButtonColor = false
+    btn.Parent = sidebar
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, 6)
+    c.Parent = btn
+    return btn
+end
+
+local mainBtn = createSidebarBtn("🏠", "Main")
+local teleportBtn = createSidebarBtn("📍", "Teleport")
+
+-- Content Area
+local contentArea = Instance.new("Frame")
+contentArea.Size = UDim2.new(1, -60, 1, -45)
+contentArea.Position = UDim2.new(0, 55, 0, 43)
+contentArea.BackgroundTransparency = 1
+contentArea.Parent = mainFrame
+
+-- Páginas
+local function createPage(name)
+    local page = Instance.new("ScrollingFrame")
+    page.Name = name
+    page.Size = UDim2.new(1, 0, 1, 0)
+    page.BackgroundTransparency = 1
+    page.BorderSizePixel = 0
+    page.ScrollBarThickness = 3
+    page.ScrollBarImageColor3 = Color3.fromRGB(80, 80, 100)
+    page.CanvasSize = UDim2.new(0, 0, 0, 0)
+    page.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    page.Visible = false
+    page.Parent = contentArea
+
+    local layout = Instance.new("UIListLayout")
+    layout.Padding = UDim.new(0, 8)
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Parent = page
+
+    local padding = Instance.new("UIPadding")
+    padding.PaddingRight = UDim.new(0, 5)
+    padding.Parent = page
+
+    return page
+end
+
+local mainPage = createPage("MainPage")
+local teleportPage = createPage("TeleportPage")
+
+-- Função para trocar página
+local function switchPage(page, btn)
+    mainPage.Visible = false
+    teleportPage.Visible = false
+    page.Visible = true
+    mainBtn.BackgroundColor3 = Color3.fromRGB(22, 22, 30)
+    teleportBtn.BackgroundColor3 = Color3.fromRGB(22, 22, 30)
+    mainBtn.TextColor3 = Color3.fromRGB(120, 120, 140)
+    teleportBtn.TextColor3 = Color3.fromRGB(120, 120, 140)
+    btn.BackgroundColor3 = Color3.fromRGB(100, 180, 255)
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+end
+
+mainBtn.MouseButton1Click:Connect(function() switchPage(mainPage, mainBtn) end)
+teleportBtn.MouseButton1Click:Connect(function() switchPage(teleportPage, teleportBtn) end)
+switchPage(mainPage, mainBtn)
+
+-- ===================== COMPONENTES GUI =====================
 local function createToggle(parent, labelText, descText, defaultState, callback)
     local container = Instance.new("Frame")
     container.Size = UDim2.new(1, 0, 0, descText and 55 or 40)
@@ -244,18 +412,17 @@ local function createToggle(parent, labelText, descText, defaultState, callback)
         }):Play()
     end
 
+    local currentState = defaultState
     btn.MouseButton1Click:Connect(function()
-        local newState = not defaultState
-        defaultState = newState
-        animate(newState)
-        if callback then callback(newState) end
+        currentState = not currentState
+        animate(currentState)
+        if callback then callback(currentState) end
     end)
-
     animate(defaultState)
-    return container
+
+    return container, function() return currentState end
 end
 
--- Função para criar slider (estilo FFO)
 local function createSlider(parent, labelText, minVal, maxVal, defaultVal, callback)
     local container = Instance.new("Frame")
     container.Size = UDim2.new(1, 0, 0, 50)
@@ -340,16 +507,46 @@ local function createSlider(parent, labelText, minVal, maxVal, defaultVal, callb
     return container
 end
 
--- Seção "Game Info" (nome da experiência)
-local infoSection = Instance.new("Frame")
-infoSection.Size = UDim2.new(1, 0, 0, 65)
-infoSection.BackgroundColor3 = Color3.fromRGB(18, 18, 25)
-infoSection.BorderSizePixel = 0
-infoSection.Parent = contentFrame
+local function createSectionHeader(parent, text)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 0, 28)
+    frame.BackgroundColor3 = Color3.fromRGB(13, 13, 18)
+    frame.BorderSizePixel = 0
+    frame.Parent = parent
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -10, 1, 0)
+    label.Position = UDim2.new(0, 10, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.Font = Enum.Font.GothamBold
+    label.TextSize = 11
+    label.TextColor3 = Color3.fromRGB(180, 180, 200)
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+
+    local icon = Instance.new("TextLabel")
+    icon.Size = UDim2.new(0, 15, 1, 0)
+    icon.BackgroundTransparency = 1
+    icon.Text = "◇"
+    icon.Font = Enum.Font.GothamBold
+    icon.TextSize = 10
+    icon.TextColor3 = Color3.fromRGB(100, 180, 255)
+    icon.TextXAlignment = Enum.TextXAlignment.Left
+    icon.Parent = label
+end
+
+-- ===================== CONSTRUÇÃO DA ABA MAIN =====================
+-- Informação do jogo
+local gameInfoFrame = Instance.new("Frame")
+gameInfoFrame.Size = UDim2.new(1, 0, 0, 65)
+gameInfoFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 25)
+gameInfoFrame.BorderSizePixel = 0
+gameInfoFrame.Parent = mainPage
 
 local infoCorner = Instance.new("UICorner")
 infoCorner.CornerRadius = UDim.new(0, 6)
-infoCorner.Parent = infoSection
+infoCorner.Parent = gameInfoFrame
 
 local gameIcon = Instance.new("TextLabel")
 gameIcon.Size = UDim2.new(0, 40, 1, 0)
@@ -358,49 +555,41 @@ gameIcon.Text = "🎮"
 gameIcon.Font = Enum.Font.GothamBold
 gameIcon.TextSize = 28
 gameIcon.TextColor3 = Color3.fromRGB(100, 180, 255)
-gameIcon.Parent = infoSection
+gameIcon.Parent = gameInfoFrame
 
 local gameNameLabel = Instance.new("TextLabel")
 gameNameLabel.Size = UDim2.new(1, -50, 1, 0)
 gameNameLabel.Position = UDim2.new(0, 45, 0, 0)
 gameNameLabel.BackgroundTransparency = 1
-gameNameLabel.Text = gameName
+gameNameLabel.Text = game.Name  -- será atualizado depois com nome real
 gameNameLabel.Font = Enum.Font.GothamBold
 gameNameLabel.TextSize = 16
 gameNameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 gameNameLabel.TextWrapped = true
 gameNameLabel.TextScaled = true
 gameNameLabel.TextXAlignment = Enum.TextXAlignment.Left
-gameNameLabel.Parent = infoSection
+gameNameLabel.Parent = gameInfoFrame
 
--- Seção "Movement Settings"
-local movementHeader = Instance.new("Frame")
-movementHeader.Size = UDim2.new(1, 0, 0, 28)
-movementHeader.BackgroundColor3 = Color3.fromRGB(13, 13, 18)
-movementHeader.BorderSizePixel = 0
-movementHeader.Parent = contentFrame
+-- Tenta obter nome real da experiência
+pcall(function()
+    local info = game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId)
+    if info and info.Name then
+        gameNameLabel.Text = info.Name
+    end
+end)
 
-local headerLabel = Instance.new("TextLabel")
-headerLabel.Size = UDim2.new(1, -10, 1, 0)
-headerLabel.Position = UDim2.new(0, 10, 0, 0)
-headerLabel.BackgroundTransparency = 1
-headerLabel.Text = "⚡ MOVEMENT SETTINGS"
-headerLabel.Font = Enum.Font.GothamBold
-headerLabel.TextSize = 11
-headerLabel.TextColor3 = Color3.fromRGB(180, 180, 200)
-headerLabel.TextXAlignment = Enum.TextXAlignment.Left
-headerLabel.Parent = movementHeader
+createSectionHeader(mainPage, "MOVEMENT SETTINGS")
 
--- Toggle Speed
-local speedContainer = createToggle(contentFrame, "Speed Boost", "Increase movement speed", state.speedEnabled, function(enabled)
+-- Speed toggle
+local speedContainer, getSpeedState = createToggle(mainPage, "Speed Boost", "Increase movement speed (Keypad 1)", state.speedEnabled, function(enabled)
     setSpeed(enabled)
 end)
 
--- Slider Speed Value
-local speedSlider = createSlider(contentFrame, "Speed Value", 50, 300, state.speedValue, function(value)
+-- Speed slider (15-300)
+local speedSlider = createSlider(mainPage, "Speed Value", 15, 300, state.speedValue, function(value)
     state.speedValue = value
     if state.speedEnabled then
-        -- reaplica velocidade imediatamente
+        -- reaplica imediatamente
         local root, hum = getCharComponents()
         if root and hum then
             local moveDir = hum.MoveDirection
@@ -412,59 +601,175 @@ local speedSlider = createSlider(contentFrame, "Speed Value", 50, 300, state.spe
     end
 end)
 
--- Toggle Infinite Jump
-local jumpContainer = createToggle(contentFrame, "Infinite Jump", "Jump infinitely without limit", state.infiniteJumpEnabled, function(enabled)
+-- Infinite Jump toggle
+local jumpContainer, getJumpState = createToggle(mainPage, "Infinite Jump", "Jump infinitely (Keypad 2)", state.infiniteJumpEnabled, function(enabled)
     setInfiniteJump(enabled)
 end)
 
--- Trata o pulo infinito via JumpRequest
-UserInputService.JumpRequest:Connect(function()
-    if state.infiniteJumpEnabled then
-        local _, hum = getCharComponents()
-        if hum then
-            hum:ChangeState(Enum.HumanoidStateType.Jumping)
-        end
+-- ===================== CONSTRUÇÃO DA ABA TELEPORT =====================
+createSectionHeader(teleportPage, "SAFE TELEPORT SYSTEM")
+
+local infoBox = Instance.new("Frame")
+infoBox.Size = UDim2.new(1, 0, 0, 60)
+infoBox.BackgroundColor3 = Color3.fromRGB(100, 180, 255)
+infoBox.BackgroundTransparency = 0.9
+infoBox.BorderSizePixel = 0
+infoBox.Parent = teleportPage
+
+local infoBoxCorner = Instance.new("UICorner")
+infoBoxCorner.CornerRadius = UDim.new(0, 6)
+infoBoxCorner.Parent = infoBox
+
+local infoText = Instance.new("TextLabel")
+infoText.Size = UDim2.new(1, -20, 1, 0)
+infoText.Position = UDim2.new(0, 10, 0, 0)
+infoText.BackgroundTransparency = 1
+infoText.Text = "📍 Ultra Smooth Teleport\nAnti-kick protection for long distances\nClick any NPC to teleport safely"
+infoText.Font = Enum.Font.Gotham
+infoText.TextSize = 10
+infoText.TextColor3 = Color3.fromRGB(255, 255, 255)
+infoText.TextXAlignment = Enum.TextXAlignment.Left
+infoText.TextWrapped = true
+infoText.Parent = infoBox
+
+local refreshBtn = Instance.new("TextButton")
+refreshBtn.Size = UDim2.new(1, 0, 0, 32)
+refreshBtn.BackgroundColor3 = Color3.fromRGB(80, 200, 120)
+refreshBtn.Text = "🔄 Refresh NPC List"
+refreshBtn.Font = Enum.Font.GothamBold
+refreshBtn.TextSize = 12
+refreshBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+refreshBtn.BorderSizePixel = 0
+refreshBtn.AutoButtonColor = false
+refreshBtn.Parent = teleportPage
+
+local refreshCorner = Instance.new("UICorner")
+refreshCorner.CornerRadius = UDim.new(0, 6)
+refreshCorner.Parent = refreshBtn
+
+local npcListContainer = Instance.new("Frame")
+npcListContainer.Size = UDim2.new(1, 0, 0, 0)
+npcListContainer.AutomaticSize = Enum.AutomaticSize.Y
+npcListContainer.BackgroundTransparency = 1
+npcListContainer.Parent = teleportPage
+
+local npcLayout = Instance.new("UIListLayout")
+npcLayout.Padding = UDim.new(0, 5)
+npcLayout.SortOrder = Enum.SortOrder.LayoutOrder
+npcLayout.Parent = npcListContainer
+
+local function populateNPCList()
+    -- Limpa lista anterior
+    for _, child in ipairs(npcListContainer:GetChildren()) do
+        if child:IsA("TextButton") then child:Destroy() end
+    end
+
+    local npcs = getNPCList()
+    if #npcs == 0 then
+        local emptyLabel = Instance.new("TextLabel")
+        emptyLabel.Size = UDim2.new(1, 0, 0, 40)
+        emptyLabel.BackgroundColor3 = Color3.fromRGB(18, 18, 25)
+        emptyLabel.Text = "   Nenhum NPC encontrado em workspace.NPCS"
+        emptyLabel.Font = Enum.Font.Gotham
+        emptyLabel.TextSize = 11
+        emptyLabel.TextColor3 = Color3.fromRGB(150, 150, 170)
+        emptyLabel.TextXAlignment = Enum.TextXAlignment.Left
+        emptyLabel.Parent = npcListContainer
+        local c = Instance.new("UICorner")
+        c.CornerRadius = UDim.new(0, 6)
+        c.Parent = emptyLabel
+        return
+    end
+
+    for _, npc in ipairs(npcs) do
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(1, 0, 0, 32)
+        btn.BackgroundColor3 = Color3.fromRGB(18, 18, 25)
+        btn.Text = "   📌 " .. npc.Name
+        btn.Font = Enum.Font.Gotham
+        btn.TextSize = 11
+        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        btn.TextXAlignment = Enum.TextXAlignment.Left
+        btn.BorderSizePixel = 0
+        btn.AutoButtonColor = false
+        btn.Parent = npcListContainer
+
+        local btnCorner = Instance.new("UICorner")
+        btnCorner.CornerRadius = UDim.new(0, 6)
+        btnCorner.Parent = btn
+
+        btn.MouseEnter:Connect(function()
+            btn.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+        end)
+        btn.MouseLeave:Connect(function()
+            btn.BackgroundColor3 = Color3.fromRGB(18, 18, 25)
+        end)
+
+        btn.MouseButton1Click:Connect(function()
+            local success, msg = teleportToNPC(npc)
+            local originalColor = btn.BackgroundColor3
+            if success then
+                btn.BackgroundColor3 = Color3.fromRGB(80, 200, 120)
+            else
+                btn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+            end
+            task.wait(0.5)
+            btn.BackgroundColor3 = originalColor
+        end)
+    end
+end
+
+refreshBtn.MouseButton1Click:Connect(populateNPCList)
+task.spawn(function()
+    task.wait(0.5)
+    populateNPCList()
+end)
+
+-- ===================== BINDS DE TECLADO =====================
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
+
+    -- F1: toggle GUI visibility
+    if input.KeyCode == Enum.KeyCode.F1 then
+        state.guiVisible = not state.guiVisible
+        mainFrame.Visible = state.guiVisible
+    end
+
+    -- Keypad 1: toggle Speed
+    if input.KeyCode == Enum.KeyCode.KeypadOne then
+        local newState = not state.speedEnabled
+        setSpeed(newState)
+        -- Atualiza visual do toggle se a GUI estiver visível (opcional)
+        -- Como o toggle não tem referência direta, apenas funcionalidade
+    end
+
+    -- Keypad 2: toggle Infinite Jump
+    if input.KeyCode == Enum.KeyCode.KeypadTwo then
+        local newState = not state.infiniteJumpEnabled
+        setInfiniteJump(newState)
     end
 end)
 
--- Reconecta loops após respawn do personagem
+-- ===================== RECONEXÃO APÓS RESPAWN =====================
 LocalPlayer.CharacterAdded:Connect(function()
-    charCache.lastUpdate = 0
+    invalidateCharCache()
     if state.speedEnabled then
         disconnect("speed")
         connections.speed = RunService.Heartbeat:Connect(speedLoop)
     end
 end)
 
--- Atualiza a posição do slider visualmente com base no valor atual
--- (já foi definido no createSlider com o valor padrão, então ok)
-
--- Pequeno texto de rodapé (opcional)
-local footer = Instance.new("TextLabel")
-footer.Size = UDim2.new(1, 0, 0, 20)
-footer.BackgroundTransparency = 1
-footer.Text = "F1 para abrir/fechar • Apenas Speed + Jump"
-footer.Font = Enum.Font.Gotham
-footer.TextSize = 9
-footer.TextColor3 = Color3.fromRGB(80, 80, 100)
-footer.Parent = contentFrame
-
--- Hotkey F1 para mostrar/esconder a GUI
-UserInputService.InputBegan:Connect(function(input, processed)
-    if processed then return end
-    if input.KeyCode == Enum.KeyCode.F1 then
-        mainFrame.Visible = not mainFrame.Visible
-    end
-end)
-
--- Anima entrada
+-- ===================== ANIMAÇÃO DE ENTRADA =====================
 mainFrame.BackgroundTransparency = 1
 TweenService:Create(mainFrame, TweenInfo.new(0.4), { BackgroundTransparency = 0 }):Play()
 
+-- ===================== STARTUP LOG =====================
 print("═══════════════════════════════════════════════")
-print("     SIMPLE HUB - SPEED + INFINITE JUMP       ")
+print("     HUB COMPLETO - MAIN + TELEPORT (NPCS)     ")
 print("═══════════════════════════════════════════════")
-print("  Experiência: " .. gameName)
-print("  Features: Speed Boost (ajustável) | Infinite Jump")
-print("  Pressione F1 para mostrar/ocultar a GUI")
+print("  Aba Main: Speed (15-300) + Infinite Jump")
+print("  Aba Teleport: NPCs em workspace.NPCS")
+print("  F1       - Mostrar/Esconder GUI")
+print("  Keypad 1 - Ligar/Desligar Speed")
+print("  Keypad 2 - Ligar/Desligar Infinite Jump")
 print("═══════════════════════════════════════════════")
