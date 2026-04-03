@@ -69,6 +69,9 @@ local state = {
     lockOnEnabled = false,
     m1MacroEnabled = false,
     m1ClickDelay = 0.15,
+    killAuraRange = 15,
+    instakillEnabled = false,
+    instakillRadius = 10,
     -- Teleport
     isTeleporting = false,
     -- GUI
@@ -253,21 +256,47 @@ local function lockOnLoop()
     end
 end
 
--- ===================== FEATURE: M1 MACRO =====================
+-- ===================== FEATURE: KILL AURA =====================
 local lastM1Click = 0
-
-local function simulateMouseClick()
-    VirtualInput:SendMouseButtonEvent(0, 0, 0, true, game, 0)
-    task.wait(0.01)
-    VirtualInput:SendMouseButtonEvent(0, 0, 0, false, game, 0)
-end
 
 local function m1MacroLoop()
     if not state.m1MacroEnabled then return end
+    local root = getCharComponents()
+    if not root then return end
     local now = tick()
     if now - lastM1Click >= state.m1ClickDelay then
-        pcall(simulateMouseClick)
         lastM1Click = now
+        for _, npc in ipairs(LivingFolder:GetChildren()) do
+            if npc:IsA("Model") and npc ~= LocalPlayer.Character then
+                local hum = npc:FindFirstChild("Humanoid")
+                local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+                if hum and npcRoot and hum.Health > 0 then
+                    local dist = (root.Position - npcRoot.Position).Magnitude
+                    if dist <= state.killAuraRange then
+                        pcall(function() hum:TakeDamage(hum.MaxHealth) end)
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- ===================== FEATURE: INSTAKILL =====================
+local function instakillLoop()
+    if not state.instakillEnabled then return end
+    local root = getCharComponents()
+    if not root then return end
+    for _, npc in ipairs(LivingFolder:GetChildren()) do
+        if npc:IsA("Model") and npc ~= LocalPlayer.Character then
+            local hum = npc:FindFirstChild("Humanoid")
+            local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+            if hum and npcRoot and hum.Health > 0 then
+                local dist = (root.Position - npcRoot.Position).Magnitude
+                if dist <= state.instakillRadius then
+                    pcall(function() hum.Health = 0 end)
+                end
+            end
+        end
     end
 end
 
@@ -833,7 +862,7 @@ createSlider(combatPage, "Autofarm Distance", 1, 25, state.autofarmDistance, fun
 end)
 
 createSectionHeader(combatPage, "COMBAT ASSIST")
-local _, _ = createToggle(combatPage, "Lock On Target", "Camera locks onto nearest enemy", state.lockOnEnabled, function(enabled)
+local _, _ = createToggle(combatPage, "Lock On Target (Keypad 3)", "Camera locks onto nearest enemy", state.lockOnEnabled, function(enabled)
     state.lockOnEnabled = enabled
     if enabled then
         disconnect("lockOn")
@@ -844,7 +873,7 @@ local _, _ = createToggle(combatPage, "Lock On Target", "Camera locks onto neare
     end
 end)
 
-local _, _ = createToggle(combatPage, "M1 Auto Click (F2)", "Automatically click M1 button", state.m1MacroEnabled, function(enabled)
+local _, _ = createToggle(combatPage, "Kill Aura (F2)", "Mata NPCs ao redor automaticamente", state.m1MacroEnabled, function(enabled)
     state.m1MacroEnabled = enabled
     if enabled then
         disconnect("m1macro")
@@ -853,8 +882,25 @@ local _, _ = createToggle(combatPage, "M1 Auto Click (F2)", "Automatically click
         disconnect("m1macro")
     end
 end)
-createSlider(combatPage, "M1 Click Delay", 0.05, 1, state.m1ClickDelay, function(v)
+createSlider(combatPage, "Kill Aura Delay", 0.05, 1, state.m1ClickDelay, function(v)
     state.m1ClickDelay = v
+end)
+createSlider(combatPage, "Kill Aura Range (studs)", 5, 60, state.killAuraRange, function(v)
+    state.killAuraRange = v
+end)
+
+createSectionHeader(combatPage, "INSTAKILL")
+local _, _ = createToggle(combatPage, "Instakill Aura", "Mata instantaneamente NPCs no raio", state.instakillEnabled, function(enabled)
+    state.instakillEnabled = enabled
+    if enabled then
+        disconnect("instakill")
+        connections.instakill = RunService.Heartbeat:Connect(instakillLoop)
+    else
+        disconnect("instakill")
+    end
+end)
+createSlider(combatPage, "Instakill Radius (studs)", 5, 100, state.instakillRadius, function(v)
+    state.instakillRadius = v
 end)
 
 -- ===================== PÁGINA TELEPORT =====================
@@ -993,6 +1039,16 @@ UserInputService.InputBegan:Connect(function(input, processed)
         setSpeed(not state.speedEnabled)
     elseif input.KeyCode == Enum.KeyCode.KeypadTwo then
         setInfiniteJump(not state.infiniteJumpEnabled)
+    elseif input.KeyCode == Enum.KeyCode.KeypadThree then
+        local newState = not state.lockOnEnabled
+        state.lockOnEnabled = newState
+        if newState then
+            disconnect("lockOn")
+            connections.lockOn = RunService.RenderStepped:Connect(lockOnLoop)
+        else
+            disconnect("lockOn")
+            lockedTarget = nil
+        end
     end
 end)
 
@@ -1012,6 +1068,10 @@ LocalPlayer.CharacterAdded:Connect(function()
         disconnect("m1macro")
         connections.m1macro = RunService.Heartbeat:Connect(m1MacroLoop)
     end
+    if state.instakillEnabled then
+        disconnect("instakill")
+        connections.instakill = RunService.Heartbeat:Connect(instakillLoop)
+    end
 end)
 
 -- Animação de entrada
@@ -1023,6 +1083,7 @@ print("     FULL HUB - MAIN | COMBAT | TELEPORT      ")
 print("═══════════════════════════════════════════════")
 print("  Autofarm NPCs: Workspace.LivingThings")
 print("  Teleport NPCs: Workspace.NPCS.Dialog")
-print("  F1 - GUI | F2 - M1 Macro | F3 - Autofarm")
+print("  F1 - GUI | F2 - Kill Aura | F3 - Autofarm")
 print("  Keypad1 - Speed | Keypad2 - Infinite Jump")
+print("  Keypad3 - Lock On")
 print("═══════════════════════════════════════════════")
