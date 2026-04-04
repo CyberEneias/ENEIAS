@@ -1,7 +1,7 @@
 --//====================================================--
 --//         SIMPLE HUB - SPEED + INFINITE JUMP        --//
 --//               + TP NPCs / REGIONS                 --//
---//                  + INSTAKILL                      --//
+--//            + INSTAKILL (TOGGLE + LOOP)            --//
 --//====================================================--
 
 local Players = game:GetService("Players")
@@ -74,7 +74,6 @@ local function setSpeed(enabled)
     else
         disconnect("speed")
     end
-    -- Atualizar visual do toggle se existir
     if updateSpeedToggle then updateSpeedToggle(enabled) end
 end
 
@@ -83,41 +82,89 @@ local function setInfiniteJump(enabled)
     if updateJumpToggle then updateJumpToggle(enabled) end
 end
 
--- Instakill function
-local function doInstaKill()
+-- ========== INSTAKILL OTIMIZADO (TOGGLE + LOOP + CACHE) ==========
+local npcCache = { list = {}, lastUpdate = 0 }
+local instakillConnection = nil
+
+-- Atualiza cache de NPCs a cada 1 segundo (otimização)
+local function updateNPCCache()
+    local now = tick()
+    if now - npcCache.lastUpdate < 1 then return end
+    npcCache.lastUpdate = now
+    
+    local newList = {}
+    local playerChar = LocalPlayer.Character
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Humanoid") and obj.Parent ~= playerChar and obj.Health > 0 then
+            local rootPart = obj.Parent:FindFirstChild("HumanoidRootPart") or obj.Parent:FindFirstChild("Torso") or obj.Parent:FindFirstChild("UpperTorso")
+            if rootPart then
+                table.insert(newList, {
+                    humanoid = obj,
+                    rootPart = rootPart,
+                })
+            end
+        end
+    end
+    npcCache.list = newList
+end
+
+-- Mata o NPC mais próximo do jogador dentro do raio
+local function killClosestNPC()
     if not state.instakillEnabled then return end
     
-    local char = LocalPlayer.Character
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
+    local playerRoot = getCharComponents()
+    if not playerRoot then return end
     
-    local targets = {}
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("Humanoid") and obj.Parent ~= char and obj.Health > 0 then
-            local targetRoot = obj.Parent:FindFirstChild("HumanoidRootPart") or obj.Parent:FindFirstChild("Torso") or obj.Parent:FindFirstChild("UpperTorso")
-            if targetRoot and (targetRoot.Position - root.Position).Magnitude <= state.instakillRadius then
-                table.insert(targets, obj)
+    updateNPCCache() -- atualiza cache periodicamente
+    
+    local closestDist = state.instakillRadius + 1
+    local closestNPC = nil
+    
+    for _, npc in ipairs(npcCache.list) do
+        if npc.humanoid and npc.humanoid.Parent and npc.humanoid.Health > 0 then
+            local dist = (npc.rootPart.Position - playerRoot.Position).Magnitude
+            if dist < closestDist then
+                closestDist = dist
+                closestNPC = npc
             end
         end
     end
     
-    for _, hum in ipairs(targets) do
-        if hum and hum.Parent and hum.Health > 0 then
-            -- Método mais confiável para matar
-            pcall(function()
-                hum.Health = 0
-                -- Alternativa se Health não funcionar
-                if hum.Health > 0 then
-                    hum:BreakJoints()
-                end
-            end)
-            task.wait(state.instakillDelay)
-        end
+    if closestNPC then
+        -- Método robusto para matar o NPC
+        local hum = closestNPC.humanoid
+        pcall(function()
+            hum.Health = 0
+            hum:BreakJoints()
+            -- Remove o modelo inteiro se necessário
+            if hum.Parent then
+                hum.Parent:BreakJoints()
+            end
+        end)
+        -- Pequeno delay entre mortes (se configurado)
+        task.wait(state.instakillDelay)
     end
 end
 
--- Cria GUI principal
+-- Inicia/para o loop do instakill
+local function setInstakill(enabled)
+    state.instakillEnabled = enabled
+    if enabled then
+        if not instakillConnection then
+            instakillConnection = RunService.Heartbeat:Connect(function()
+                killClosestNPC()
+            end)
+        end
+    else
+        if instakillConnection then
+            instakillConnection:Disconnect()
+            instakillConnection = nil
+        end
+    end
+    if updateInstakillToggle then updateInstakillToggle(enabled) end
+end
+
+-- ========== CRIAÇÃO DA GUI ==========
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "SimpleHub"
 screenGui.ResetOnSpawn = false
@@ -186,6 +233,7 @@ closeBtn.MouseButton1Click:Connect(function()
     for _, conn in pairs(connections) do
         if conn then pcall(conn.Disconnect, conn) end
     end
+    if instakillConnection then instakillConnection:Disconnect() end
 end)
 
 -- Área de abas laterais
@@ -196,11 +244,6 @@ tabContainer.BackgroundColor3 = Color3.fromRGB(18, 18, 25)
 tabContainer.BorderSizePixel = 0
 tabContainer.Parent = mainFrame
 
-local tabCorner = Instance.new("UICorner")
-tabCorner.CornerRadius = UDim.new(0, 0)
-tabCorner.Parent = tabContainer
-
--- Área de conteúdo (onde cada aba mostra seu conteúdo)
 local contentContainer = Instance.new("Frame")
 contentContainer.Size = UDim2.new(1, -105, 1, -10)
 contentContainer.Position = UDim2.new(0, 105, 0, 5)
@@ -212,7 +255,6 @@ local contentCorner = Instance.new("UICorner")
 contentCorner.CornerRadius = UDim.new(0, 8)
 contentCorner.Parent = contentContainer
 
--- ScrollingFrame para conteúdo rolável
 local scrollContent = Instance.new("ScrollingFrame")
 scrollContent.Size = UDim2.new(1, -10, 1, -10)
 scrollContent.Position = UDim2.new(0, 5, 0, 5)
@@ -228,7 +270,7 @@ contentLayout.Padding = UDim.new(0, 8)
 contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
 contentLayout.Parent = scrollContent
 
--- Funções para criar UI elementos
+-- Funções auxiliares de UI
 local function createToggle(parent, labelText, descText, defaultState, callback)
     local container = Instance.new("Frame")
     container.Size = UDim2.new(1, -10, 0, descText and 55 or 40)
@@ -309,7 +351,6 @@ local function createToggle(parent, labelText, descText, defaultState, callback)
         if callback then callback(newState) end
     end)
 
-    -- Retorna funções para controle externo
     return container, function(enabled)
         defaultState = enabled
         animate(enabled)
@@ -420,7 +461,7 @@ local function createButton(parent, text, callback)
     return btn
 end
 
--- ========== CRIAR ABAS ==========
+-- ========== ABAS ==========
 local tabs = {
     { name = "⚡ Movement", icon = "⚡" },
     { name = "🤖 TP NPCs", icon = "🤖" },
@@ -428,18 +469,16 @@ local tabs = {
     { name = "💀 Instakill", icon = "💀" },
 }
 
-local activeTab = nil
 local tabButtons = {}
+local updateSpeedToggle, updateJumpToggle, updateInstakillToggle
 
 local function switchToTab(tabName)
-    -- Limpar conteúdo
     for _, child in pairs(scrollContent:GetChildren()) do
         if child:IsA("Frame") or child:IsA("TextButton") then
             child:Destroy()
         end
     end
     
-    -- Atualizar estilo dos botões
     for _, btn in pairs(tabButtons) do
         btn.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
         btn.TextColor3 = Color3.fromRGB(180, 180, 200)
@@ -449,7 +488,6 @@ local function switchToTab(tabName)
         tabButtons[tabName].TextColor3 = Color3.fromRGB(0, 0, 0)
     end
     
-    -- Carregar conteúdo da aba
     if tabName == "⚡ Movement" then
         -- Info do jogo
         local infoFrame = Instance.new("Frame")
@@ -457,7 +495,6 @@ local function switchToTab(tabName)
         infoFrame.BackgroundColor3 = Color3.fromRGB(22, 22, 30)
         infoFrame.BorderSizePixel = 0
         infoFrame.Parent = scrollContent
-        
         local infoCorner = Instance.new("UICorner")
         infoCorner.CornerRadius = UDim.new(0, 6)
         infoCorner.Parent = infoFrame
@@ -484,44 +521,21 @@ local function switchToTab(tabName)
         gameNameLabel.TextXAlignment = Enum.TextXAlignment.Left
         gameNameLabel.Parent = infoFrame
         
-        -- Speed Toggle
-        local speedContainer, updateSpeed = createToggle(scrollContent, "Speed Boost", "Increase movement speed (Keypad 1)", state.speedEnabled, function(enabled)
-            setSpeed(enabled)
+        local speedContainer, spUp = createToggle(scrollContent, "Speed Boost", "Increase movement speed (Keypad 1)", state.speedEnabled, setSpeed)
+        updateSpeedToggle = spUp
+        local speedSlider = createSlider(scrollContent, "Speed Value", 50, 300, state.speedValue, function(val)
+            state.speedValue = val
         end)
-        updateSpeedToggle = updateSpeed
-        
-        -- Speed Slider
-        local speedSlider = createSlider(scrollContent, "Speed Value", 50, 300, state.speedValue, function(value)
-            state.speedValue = value
-            if state.speedEnabled then
-                local root, hum = getCharComponents()
-                if root and hum then
-                    local moveDir = hum.MoveDirection
-                    if moveDir.Magnitude > 0 then
-                        local curY = root.AssemblyLinearVelocity.Y
-                        root.AssemblyLinearVelocity = (moveDir.Unit * value) + Vector3.new(0, curY, 0)
-                    end
-                end
-            end
-        end)
-        
-        -- Infinite Jump Toggle
-        local jumpContainer, updateJump = createToggle(scrollContent, "Infinite Jump", "Jump infinitely without limit (Keypad 2)", state.infiniteJumpEnabled, function(enabled)
-            setInfiniteJump(enabled)
-        end)
-        updateJumpToggle = updateJump
+        local jumpContainer, jUp = createToggle(scrollContent, "Infinite Jump", "Jump infinitely (Keypad 2)", state.infiniteJumpEnabled, setInfiniteJump)
+        updateJumpToggle = jUp
         
     elseif tabName == "🤖 TP NPCs" then
-        local refreshBtn = createButton(scrollContent, "⟳ Refresh NPC List", function()
-            refreshNPCList()
-        end)
-        
+        createButton(scrollContent, "⟳ Refresh NPC List", function() refreshNPCList() end)
         local npcListFrame = Instance.new("Frame")
         npcListFrame.Size = UDim2.new(1, -10, 0, 250)
         npcListFrame.BackgroundColor3 = Color3.fromRGB(22, 22, 30)
         npcListFrame.BorderSizePixel = 0
         npcListFrame.Parent = scrollContent
-        
         local npcCorner = Instance.new("UICorner")
         npcCorner.CornerRadius = UDim.new(0, 6)
         npcCorner.Parent = npcListFrame
@@ -545,7 +559,6 @@ local function switchToTab(tabName)
             for _, child in pairs(npcScroll:GetChildren()) do
                 if child:IsA("TextButton") then child:Destroy() end
             end
-            
             local npcs = {}
             for _, obj in ipairs(workspace:GetDescendants()) do
                 if obj:IsA("Humanoid") and obj.Parent ~= LocalPlayer.Character then
@@ -555,7 +568,6 @@ local function switchToTab(tabName)
                     end
                 end
             end
-            
             if #npcs == 0 then
                 local empty = Instance.new("TextLabel")
                 empty.Size = UDim2.new(1, 0, 0, 30)
@@ -567,7 +579,6 @@ local function switchToTab(tabName)
                 empty.Parent = npcScroll
                 return
             end
-            
             for _, npc in ipairs(npcs) do
                 local btn = Instance.new("TextButton")
                 btn.Size = UDim2.new(1, -10, 0, 28)
@@ -578,17 +589,14 @@ local function switchToTab(tabName)
                 btn.TextColor3 = Color3.fromRGB(255, 255, 255)
                 btn.TextXAlignment = Enum.TextXAlignment.Left
                 btn.Parent = npcScroll
-                
                 local btnCorner = Instance.new("UICorner")
                 btnCorner.CornerRadius = UDim.new(0, 4)
                 btnCorner.Parent = btn
-                
                 btn.MouseButton1Click:Connect(function()
-                    local rootPart = npc.root
-                    if rootPart and rootPart.Parent then
+                    if npc.root and npc.root.Parent then
                         local char = LocalPlayer.Character
                         if char and char:FindFirstChild("HumanoidRootPart") then
-                            char.HumanoidRootPart.CFrame = rootPart.CFrame + Vector3.new(0, 3, 0)
+                            char.HumanoidRootPart.CFrame = npc.root.CFrame + Vector3.new(0, 3, 0)
                         end
                     else
                         btn.Text = "⚠️ " .. npc.name .. " (unavailable)"
@@ -598,20 +606,15 @@ local function switchToTab(tabName)
                 end)
             end
         end
-        
         refreshNPCList()
         
     elseif tabName == "🗺️ TP Regions" then
-        local refreshBtn = createButton(scrollContent, "⟳ Refresh Regions", function()
-            refreshRegionList()
-        end)
-        
+        createButton(scrollContent, "⟳ Refresh Regions", function() refreshRegionList() end)
         local regionListFrame = Instance.new("Frame")
         regionListFrame.Size = UDim2.new(1, -10, 0, 250)
         regionListFrame.BackgroundColor3 = Color3.fromRGB(22, 22, 30)
         regionListFrame.BorderSizePixel = 0
         regionListFrame.Parent = scrollContent
-        
         local regionCorner = Instance.new("UICorner")
         regionCorner.CornerRadius = UDim.new(0, 6)
         regionCorner.Parent = regionListFrame
@@ -635,7 +638,6 @@ local function switchToTab(tabName)
             for _, child in pairs(regionScroll:GetChildren()) do
                 if child:IsA("TextButton") then child:Destroy() end
             end
-            
             local regionsFolder = workspace:FindFirstChild("Regions")
             if not regionsFolder then
                 local empty = Instance.new("TextLabel")
@@ -648,7 +650,6 @@ local function switchToTab(tabName)
                 empty.Parent = regionScroll
                 return
             end
-            
             local regions = {}
             for _, obj in ipairs(regionsFolder:GetChildren()) do
                 local pos = nil
@@ -662,19 +663,17 @@ local function switchToTab(tabName)
                     table.insert(regions, {name = obj.Name, position = pos})
                 end
             end
-            
             if #regions == 0 then
                 local empty = Instance.new("TextLabel")
                 empty.Size = UDim2.new(1, 0, 0, 30)
                 empty.BackgroundTransparency = 1
-                empty.Text = "No regions (parts/models) inside Regions folder"
+                empty.Text = "No regions inside Regions folder"
                 empty.TextColor3 = Color3.fromRGB(120, 120, 140)
                 empty.Font = Enum.Font.Gotham
                 empty.TextSize = 11
                 empty.Parent = regionScroll
                 return
             end
-            
             for _, reg in ipairs(regions) do
                 local btn = Instance.new("TextButton")
                 btn.Size = UDim2.new(1, -10, 0, 28)
@@ -685,49 +684,38 @@ local function switchToTab(tabName)
                 btn.TextColor3 = Color3.fromRGB(255, 255, 255)
                 btn.TextXAlignment = Enum.TextXAlignment.Left
                 btn.Parent = regionScroll
-                
                 local btnCorner = Instance.new("UICorner")
                 btnCorner.CornerRadius = UDim.new(0, 4)
                 btnCorner.Parent = btn
-                
                 btn.MouseButton1Click:Connect(function()
-                    local pos = reg.position
-                    if pos then
+                    if reg.position then
                         local char = LocalPlayer.Character
                         if char and char:FindFirstChild("HumanoidRootPart") then
-                            char.HumanoidRootPart.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
+                            char.HumanoidRootPart.CFrame = CFrame.new(reg.position + Vector3.new(0, 3, 0))
                         end
                     end
                 end)
             end
         end
-        
         refreshRegionList()
         
     elseif tabName == "💀 Instakill" then
-        -- Instakill Toggle
-        local instakillContainer, updateInstakill = createToggle(scrollContent, "Instakill", "Kill all NPCs in range when pressing Keypad 3", state.instakillEnabled, function(enabled)
-            state.instakillEnabled = enabled
-        end)
-        
-        -- Delay slider
+        local instaContainer, iUp = createToggle(scrollContent, "Instakill", "Kill nearest NPC continuously (Keypad 3 toggle)", state.instakillEnabled, setInstakill)
+        updateInstakillToggle = iUp
         local delaySlider = createSlider(scrollContent, "Kill Delay (seconds)", 0.05, 2, state.instakillDelay, function(val)
             state.instakillDelay = val
         end)
-        
-        -- Radius slider
         local radiusSlider = createSlider(scrollContent, "Hitbox Radius (studs)", 5, 100, state.instakillRadius, function(val)
             state.instakillRadius = val
         end)
-        
         local infoLabel = Instance.new("TextLabel")
         infoLabel.Size = UDim2.new(1, -10, 0, 30)
-        infoLabel.Position = UDim2.new(0, 5, 0, 0)
         infoLabel.BackgroundTransparency = 1
-        infoLabel.Text = "⚡ Press Keypad 3 to execute Instakill"
+        infoLabel.Text = "⚡ Press Keypad 3 to toggle ON/OFF\n💀 While ON, kills the closest NPC within radius every tick"
         infoLabel.Font = Enum.Font.Gotham
         infoLabel.TextSize = 10
         infoLabel.TextColor3 = Color3.fromRGB(100, 180, 255)
+        infoLabel.TextWrapped = true
         infoLabel.Parent = scrollContent
     end
 end
@@ -745,15 +733,12 @@ for i, tab in ipairs(tabs) do
     btn.TextColor3 = Color3.fromRGB(180, 180, 200)
     btn.BorderSizePixel = 0
     btn.Parent = tabContainer
-    
     local btnCorner = Instance.new("UICorner")
     btnCorner.CornerRadius = UDim.new(0, 6)
     btnCorner.Parent = btn
-    
     btn.MouseButton1Click:Connect(function()
         switchToTab(tab.name)
     end)
-    
     tabButtons[tab.name] = btn
     lastY = lastY + 45
 end
@@ -761,7 +746,7 @@ end
 -- Ativar primeira aba
 switchToTab("⚡ Movement")
 
--- Infinite jump handler
+-- Jump handler
 UserInputService.JumpRequest:Connect(function()
     if state.infiniteJumpEnabled then
         local _, hum = getCharComponents()
@@ -777,19 +762,18 @@ UserInputService.InputBegan:Connect(function(input, processed)
     if input.KeyCode == Enum.KeyCode.KeypadOne then
         local newState = not state.speedEnabled
         setSpeed(newState)
-        if updateSpeedToggle then updateSpeedToggle(newState) end
     elseif input.KeyCode == Enum.KeyCode.KeypadTwo then
         local newState = not state.infiniteJumpEnabled
         setInfiniteJump(newState)
-        if updateJumpToggle then updateJumpToggle(newState) end
     elseif input.KeyCode == Enum.KeyCode.KeypadThree then
-        doInstaKill()
+        local newState = not state.instakillEnabled
+        setInstakill(newState)
     elseif input.KeyCode == Enum.KeyCode.F1 then
         mainFrame.Visible = not mainFrame.Visible
     end
 end)
 
--- Reconecta loops após respawn
+-- Respawn handler
 LocalPlayer.CharacterAdded:Connect(function()
     charCache.lastUpdate = 0
     if state.speedEnabled then
@@ -803,23 +787,22 @@ local footer = Instance.new("TextLabel")
 footer.Size = UDim2.new(1, 0, 0, 20)
 footer.Position = UDim2.new(0, 0, 1, -22)
 footer.BackgroundTransparency = 1
-footer.Text = "F1 toggle GUI | Keypad1=Speed | Keypad2=Jump | Keypad3=Instakill"
+footer.Text = "F1 toggle GUI | Keypad1=Speed | Keypad2=Jump | Keypad3=Instakill (Toggle)"
 footer.Font = Enum.Font.Gotham
 footer.TextSize = 9
 footer.TextColor3 = Color3.fromRGB(80, 80, 100)
 footer.TextXAlignment = Enum.TextXAlignment.Center
 footer.Parent = mainFrame
 
--- Anima entrada
+-- Animação de entrada
 mainFrame.BackgroundTransparency = 1
 TweenService:Create(mainFrame, TweenInfo.new(0.4), { BackgroundTransparency = 0 }):Play()
 
 print("═══════════════════════════════════════════════")
 print("     SIMPLE HUB - SPEED + INFINITE JUMP       ")
-print("     + TP NPCs / REGIONS + INSTAKILL          ")
+print("     + TP NPCs / REGIONS + INSTAKILL (TOGGLE) ")
 print("═══════════════════════════════════════════════")
 print("  Experiência: " .. gameName)
-print("  Features: Speed, Infinite Jump, TP NPCs/Regions, Instakill")
-print("  Pressione F1 para mostrar/ocultar a GUI")
-print("  Keypad1 = Speed | Keypad2 = Jump | Keypad3 = Instakill")
+print("  Keypad1 = Speed | Keypad2 = Jump | Keypad3 = Instakill (ON/OFF)")
+print("  Instakill mata o NPC mais próximo continuamente")
 print("═══════════════════════════════════════════════")
