@@ -1,5 +1,5 @@
 --//====================================================--
---//         SIMPLE HUB - COMPLETE EDITION             --//
+--//         SIMPLE HUB - COMPLETE EDITION             --
 --//====================================================--
 --//  Speed (KP1) | Infinite Jump (KP2) | Instakill (KP3)
 --//  Autofarm | Kill Aura | ESP | Teleport NPCs/Regions
@@ -15,13 +15,13 @@ local LocalPlayer = Players.LocalPlayer
 
 -- Configurações
 local CONFIG = {
-    NPC_FOLDER = workspace:WaitForChild("Humanoids", 5) or workspace,
-    REGION_FOLDER = workspace:WaitForChild("Regions", 5) or workspace,
+    NPC_FOLDER = workspace:FindFirstChild("Humanoids") or workspace,
+    REGION_FOLDER = workspace:FindFirstChild("Regions") or workspace,
     MAX_DISTANCE = 100,
     TELEPORT_SPEED = 150,
     KILLAURA_RADIUS = 12,
     KILLAURA_DAMAGE = 15,
-    KILLAURA_INTERVAL = 0.1,
+    KILLAURA_DELAY = 0.1,
     AUTOFARM_DISTANCE = 8,
     HEIGHT_OFFSET = 2.5,
 }
@@ -37,11 +37,11 @@ local state = {
     killauraEnabled = false,
     killauraRadius = 12,
     killauraDamage = 15,
+    killauraDelay = 0.1,
     espEnabled = false,
     tracersEnabled = false,
     healthBarsEnabled = false,
     fovEnabled = false,
-    currentPage = "combat",
 }
 
 -- Cache do personagem
@@ -162,18 +162,56 @@ local function setAutofarm(enabled)
     end
 end
 
--- Kill Aura (dano em área)
+-- Kill Aura com hitbox (parte ao redor do personagem)
+local hitboxPart = nil
 local killauraCooldown = {}
+
+local function createHitbox()
+    if hitboxPart and hitboxPart.Parent then return end
+    local root = getCharComponents()
+    if not root then return end
+    hitboxPart = Instance.new("Part")
+    hitboxPart.Name = "KillAuraHitbox"
+    hitboxPart.Size = Vector3.new(state.killauraRadius * 2, state.killauraRadius * 2, state.killauraRadius * 2)
+    hitboxPart.Shape = Enum.PartType.Ball
+    hitboxPart.Transparency = 0.8
+    hitboxPart.Color = Color3.fromRGB(255, 0, 0)
+    hitboxPart.Anchored = false
+    hitboxPart.CanCollide = false
+    hitboxPart.Parent = root.Parent
+    -- Weld à root
+    local weld = Instance.new("Weld")
+    weld.Part0 = root
+    weld.Part1 = hitboxPart
+    weld.C0 = CFrame.new(0, 0, 0)
+    weld.Parent = hitboxPart
+end
+
+local function destroyHitbox()
+    if hitboxPart then
+        hitboxPart:Destroy()
+        hitboxPart = nil
+    end
+end
+
 local function killauraLoop()
     if not state.killauraEnabled then return end
     local root = getCharComponents()
     if not root then return end
+    
+    -- Criar/atualizar hitbox
+    if not hitboxPart or not hitboxPart.Parent then
+        createHitbox()
+    else
+        hitboxPart.Size = Vector3.new(state.killauraRadius * 2, state.killauraRadius * 2, state.killauraRadius * 2)
+    end
+    
     local now = tick()
     for _, npc in ipairs(getValidNPCs()) do
         if npc.hum.Health > 0 then
             local dist = (root.Position - npc.root.Position).Magnitude
             if dist <= state.killauraRadius then
-                if not killauraCooldown[npc.model] or now - killauraCooldown[npc.model] >= state.killauraInterval then
+                if not killauraCooldown[npc.model] or now - killauraCooldown[npc.model] >= state.killauraDelay then
                     npc.hum.Health = math.max(0, npc.hum.Health - state.killauraDamage)
                     killauraCooldown[npc.model] = now
                 end
@@ -185,10 +223,12 @@ end
 local function setKillaura(enabled)
     state.killauraEnabled = enabled
     if enabled then
+        createHitbox()
         disconnect("killaura")
         connections.killaura = RunService.Heartbeat:Connect(killauraLoop)
     else
         disconnect("killaura")
+        destroyHitbox()
         table.clear(killauraCooldown)
     end
 end
@@ -251,7 +291,6 @@ local function updateESP()
             end
         end
     end
-    -- Limpar highlights de NPCs que morreram
     for model, hl in pairs(espHighlights) do
         if not model.Parent then hl:Destroy(); espHighlights[model] = nil end
     end
@@ -288,7 +327,6 @@ local function updateTracers()
             end
         end
     end
-    -- Limpar linhas de NPCs mortos
     for model, line in pairs(tracerLines) do
         if not model.Parent then line:Remove(); tracerLines[model] = nil end
     end
@@ -378,8 +416,8 @@ screenGui.IgnoreGuiInset = true
 screenGui.Parent = CoreGui
 
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 380, 0, 480)
-mainFrame.Position = UDim2.new(0.5, -190, 0.5, -240)
+mainFrame.Size = UDim2.new(0, 380, 0, 520)
+mainFrame.Position = UDim2.new(0.5, -190, 0.5, -260)
 mainFrame.BackgroundColor3 = Color3.fromRGB(13, 13, 18)
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
@@ -444,7 +482,7 @@ local sidebarCorner = Instance.new("UICorner")
 sidebarCorner.CornerRadius = UDim.new(0,8)
 sidebarCorner.Parent = sidebar
 
-local function createTabButton(parent, icon, name, yPos)
+local function createTabButton(parent, icon, yPos)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(0, 36, 0, 36)
     btn.Position = UDim2.new(0.5, -18, 0, yPos)
@@ -462,9 +500,9 @@ local function createTabButton(parent, icon, name, yPos)
     return btn
 end
 
-local combatBtn = createTabButton(sidebar, "⚔", "Combat", 10)
-local espBtn = createTabButton(sidebar, "👁", "ESP", 55)
-local tpBtn = createTabButton(sidebar, "📍", "Teleport", 100)
+local combatBtn = createTabButton(sidebar, "⚔", 10)
+local espBtn = createTabButton(sidebar, "👁", 55)
+local tpBtn = createTabButton(sidebar, "📍", 100)
 
 -- Conteúdo das abas
 local contentArea = Instance.new("Frame")
@@ -513,7 +551,7 @@ local tpLayout = Instance.new("UIListLayout")
 tpLayout.Padding = UDim.new(0,8)
 tpLayout.Parent = tpPage
 
--- Funções auxiliares para criar toggles e sliders (reaproveitando do HE original)
+-- Funções auxiliares para criar toggles e sliders
 local function createToggle(parent, labelText, descText, defaultState, callback)
     local container = Instance.new("Frame")
     container.Size = UDim2.new(1,0,0, descText and 55 or 40)
@@ -678,6 +716,7 @@ createSlider(combatPage, "Speed Value", 50, 300, state.speedValue, function(v) s
 createToggle(combatPage, "Infinite Jump", "Jump infinitely (KP2)", state.infiniteJumpEnabled, setInfiniteJump)
 
 createToggle(combatPage, "Auto Farm", "Farm nearest NPC (Behind/Above)", state.autofarmEnabled, setAutofarm)
+
 local modeContainer = Instance.new("Frame")
 modeContainer.Size = UDim2.new(1,0,0,40)
 modeContainer.BackgroundColor3 = Color3.fromRGB(18,18,25)
@@ -696,25 +735,50 @@ modeLabel.TextSize = 11
 modeLabel.TextColor3 = Color3.fromRGB(180,180,200)
 modeLabel.TextXAlignment = Enum.TextXAlignment.Left
 modeLabel.Parent = modeContainer
-local behindBtn = createButton(modeContainer, "Behind", Color3.fromRGB(40,40,55), function() state.autofarmMode = "Behind" end)
-behindBtn.Position = UDim2.new(0,10,0,25)
+local behindBtn = Instance.new("TextButton")
 behindBtn.Size = UDim2.new(0.45,-5,0,25)
-local aboveBtn = createButton(modeContainer, "Above", Color3.fromRGB(40,40,55), function() state.autofarmMode = "Above" end)
-aboveBtn.Position = UDim2.new(0.55,0,0,25)
+behindBtn.Position = UDim2.new(0,10,0,25)
+behindBtn.BackgroundColor3 = (state.autofarmMode == "Behind") and Color3.fromRGB(100,180,255) or Color3.fromRGB(40,40,55)
+behindBtn.Text = "Behind"
+behindBtn.Font = Enum.Font.GothamBold
+behindBtn.TextSize = 11
+behindBtn.TextColor3 = Color3.fromRGB(255,255,255)
+behindBtn.BorderSizePixel = 0
+behindBtn.AutoButtonColor = false
+behindBtn.Parent = modeContainer
+local behindCorner = Instance.new("UICorner")
+behindCorner.CornerRadius = UDim.new(0,6)
+behindCorner.Parent = behindBtn
+local aboveBtn = Instance.new("TextButton")
 aboveBtn.Size = UDim2.new(0.45,-5,0,25)
+aboveBtn.Position = UDim2.new(0.55,0,0,25)
+aboveBtn.BackgroundColor3 = (state.autofarmMode == "Above") and Color3.fromRGB(100,180,255) or Color3.fromRGB(40,40,55)
+aboveBtn.Text = "Above"
+aboveBtn.Font = Enum.Font.GothamBold
+aboveBtn.TextSize = 11
+aboveBtn.TextColor3 = Color3.fromRGB(255,255,255)
+aboveBtn.BorderSizePixel = 0
+aboveBtn.AutoButtonColor = false
+aboveBtn.Parent = modeContainer
+local aboveCorner = Instance.new("UICorner")
+aboveCorner.CornerRadius = UDim.new(0,6)
+aboveCorner.Parent = aboveBtn
+
 local function updateModeBtns()
     behindBtn.BackgroundColor3 = (state.autofarmMode == "Behind") and Color3.fromRGB(100,180,255) or Color3.fromRGB(40,40,55)
     aboveBtn.BackgroundColor3 = (state.autofarmMode == "Above") and Color3.fromRGB(100,180,255) or Color3.fromRGB(40,40,55)
 end
-behindBtn.MouseButton1Click:Connect(updateModeBtns)
-aboveBtn.MouseButton1Click:Connect(updateModeBtns)
+behindBtn.MouseButton1Click:Connect(function() state.autofarmMode = "Behind"; updateModeBtns() end)
+aboveBtn.MouseButton1Click:Connect(function() state.autofarmMode = "Above"; updateModeBtns() end)
 updateModeBtns()
 
 createSlider(combatPage, "Autofarm Distance", 2, 15, state.autofarmDistance, function(v) state.autofarmDistance = v end)
 
-createToggle(combatPage, "Kill Aura", "Damage NPCs in radius", state.killauraEnabled, setKillaura)
+createToggle(combatPage, "Kill Aura", "Damage NPCs in radius (hitbox)", state.killauraEnabled, setKillaura)
 createSlider(combatPage, "Kill Aura Radius", 5, 20, state.killauraRadius, function(v) state.killauraRadius = v end)
 createSlider(combatPage, "Kill Aura Damage", 5, 50, state.killauraDamage, function(v) state.killauraDamage = v end)
+createSlider(combatPage, "Kill Aura Delay", 0.05, 1, state.killauraDelay, function(v) state.killauraDelay = v end)
+
 createButton(combatPage, "⚡ INSTAKILL (KP3)", Color3.fromRGB(220,50,50), instakill)
 
 -- ========== ABA ESP ==========
@@ -724,20 +788,20 @@ createToggle(espPage, "Health Bars", "Show NPC health", state.healthBarsEnabled,
 createToggle(espPage, "FOV Circle", "Display aiming circle", state.fovEnabled, function(v) state.fovEnabled = v end)
 
 -- ========== ABA TELEPORT ==========
-createButton(tpPage, "🔄 Refresh NPC List", Color3.fromRGB(80,200,120), function()
+local refreshNPCBtn = createButton(tpPage, "🔄 Refresh NPC List", Color3.fromRGB(80,200,120), function()
     for _, child in ipairs(tpPage:GetChildren()) do
-        if child:IsA("TextButton") and child ~= refreshNPCBtn then child:Destroy() end
+        if child:IsA("TextButton") and child ~= refreshNPCBtn and child ~= regionHeader and not child.Text:find("Refresh Regions") then
+            if child.Text and (child.Text:find("📍") or child.Text:find("🌍")) then
+                child:Destroy()
+            end
+        end
     end
     for _, npc in ipairs(getValidNPCs()) do
-        createButton(tpPage, "📍 " .. npc.model.Name, Color3.fromRGB(18,18,25), function()
+        createButton(tpPage, "📍 " .. npc.model.Name, Color3.fromRGB(25,25,35), function()
             teleportToNPC(npc.model)
         end)
     end
 end)
-local refreshNPCBtn = nil
-for _, btn in ipairs(tpPage:GetChildren()) do
-    if btn.Text:find("Refresh") then refreshNPCBtn = btn end
-end
 
 local regionHeader = Instance.new("Frame")
 regionHeader.Size = UDim2.new(1,0,0,30)
@@ -758,7 +822,9 @@ regionHeaderLabel.Parent = regionHeader
 local function refreshRegions()
     for _, child in ipairs(tpPage:GetChildren()) do
         if child:IsA("TextButton") and child ~= refreshNPCBtn and child ~= regionHeader then
-            if child.Text and child.Text:find("🌍") then child:Destroy() end
+            if child.Text and child.Text:find("🌍") then
+                child:Destroy()
+            end
         end
     end
     local regionFolder = CONFIG.REGION_FOLDER
@@ -780,7 +846,6 @@ local function switchPage(page)
     combatPage.Visible = (page == "combat")
     espPage.Visible = (page == "esp")
     tpPage.Visible = (page == "tp")
-    state.currentPage = page
     local combatColor = (page == "combat") and Color3.fromRGB(100,180,255) or Color3.fromRGB(25,25,35)
     local espColor = (page == "esp") and Color3.fromRGB(100,180,255) or Color3.fromRGB(25,25,35)
     local tpColor = (page == "tp") and Color3.fromRGB(100,180,255) or Color3.fromRGB(25,25,35)
@@ -801,7 +866,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
         mainFrame.Visible = not mainFrame.Visible
     elseif input.KeyCode == Enum.KeyCode.KeypadOne then
         setSpeed(not state.speedEnabled)
-        -- atualizar visual do toggle (não temos referência direta, mas ok)
+        -- Atualizar visual do toggle (opcional)
     elseif input.KeyCode == Enum.KeyCode.KeypadTwo then
         setInfiniteJump(not state.infiniteJumpEnabled)
     elseif input.KeyCode == Enum.KeyCode.KeypadThree then
@@ -842,6 +907,6 @@ print("════════════════════════�
 print("     SIMPLE HUB - COMPLETE EDITION            ")
 print("═══════════════════════════════════════════════")
 print("  KP1 - Speed | KP2 - Infinite Jump | KP3 - Instakill")
-print("  Autofarm (Behind/Above) | Kill Aura | ESP")
+print("  Autofarm (Behind/Above) | Kill Aura (Hitbox) | ESP")
 print("  Teleport NPCs (Workspace.Humanoids) e Regions")
 print("═══════════════════════════════════════════════")
