@@ -1,7 +1,8 @@
---// SIMPLE REMOTE LOGGER HUB UI
+--// REMOTE LOGGER HUB (FIXED + AUTO SCROLL + DEBUG)
 
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 
@@ -9,7 +10,6 @@ local player = Players.LocalPlayer
 local gui = Instance.new("ScreenGui")
 gui.Name = "RemoteLoggerHub"
 gui.Parent = CoreGui
-
 gui.ResetOnSpawn = false
 
 local frame = Instance.new("Frame")
@@ -23,7 +23,7 @@ frame.Draggable = true
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1,0,0,30)
 title.BackgroundTransparency = 1
-title.Text = "Remote Logger Hub"
+title.Text = "Remote Logger Hub (F2 toggle)"
 title.TextColor3 = Color3.new(1,1,1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 14
@@ -33,8 +33,8 @@ local console = Instance.new("ScrollingFrame")
 console.Size = UDim2.new(1,-10,1,-40)
 console.Position = UDim2.new(0,5,0,35)
 console.CanvasSize = UDim2.new(0,0,0,0)
-console.AutomaticCanvasSize = Enum.AutomaticSize.Y
-console.ScrollBarThickness = 4
+console.AutomaticCanvasSize = Enum.AutaticSize and Enum.AutaticSize.Y or Enum.AutomaticSize.Y
+console.ScrollBarThickness = 6
 console.BackgroundColor3 = Color3.fromRGB(10,10,15)
 console.Parent = frame
 
@@ -44,42 +44,50 @@ layout.Padding = UDim.new(0,4)
 
 local function addLog(text)
     local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1,-5,0,20)
+    label.Size = UDim2.new(1,-5,0,18)
     label.BackgroundTransparency = 1
     label.Text = text
-    label.TextColor3 = Color3.fromRGB(180,180,255)
+    label.TextColor3 = Color3.fromRGB(180,255,180)
     label.Font = Enum.Font.Code
     label.TextSize = 12
     label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextWrapped = false
     label.Parent = console
+
+    task.wait()
+    console.CanvasPosition = Vector2.new(0, console.AbsoluteCanvasSize.Y)
 end
 
--- HOOK
+-- SAFE HOOK
 local mt = getrawmetatable(game)
-setreadonly(mt,false)
-
 local old = mt.__namecall
+setreadonly(mt, false)
 
-mt.__namecall = newcclosure(function(self,...)
+mt.__namecall = newcclosure(function(self, ...)
     local args = {...}
     local method = getnamecallmethod()
 
     if method == "FireServer" then
-        addLog("REMOTE: "..self:GetFullName())
+        pcall(function()
+            addLog("🔴 REMOTE: " .. self:GetFullName())
 
-        for i,v in ipairs(args) do
-            addLog("  ["..i.."] = "..tostring(v))
-        end
+            for i,v in ipairs(args) do
+                addLog("   ["..i.."] = " .. tostring(v))
+            end
 
-        addLog("---------------------------")
+            addLog("---------------------------")
+        end)
     end
 
-    return old(self,...)
+    return old(self, ...)
 end)
 
--- Toggle key
-local UserInputService = game:GetService("UserInputService")
+-- DEBUG MESSAGE (pra saber se hook funcionou)
+task.delay(2, function()
+    addLog("[✔] Logger iniciado. Faça um ataque.")
+end)
 
+-- Toggle
 UserInputService.InputBegan:Connect(function(input, gp)
     if gp then return end
     if input.KeyCode == Enum.KeyCode.F2 then
