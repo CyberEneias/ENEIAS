@@ -1,4 +1,4 @@
---// REMOTE LOGGER HUB (FORCE DEBUG VERSION)
+--// REMOTE LOGGER HUB (OTIMIZADO - NÃO QUEBRA INPUT)
 
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
@@ -19,14 +19,13 @@ frame.Size = UDim2.new(0, 500, 0, 300)
 frame.Position = UDim2.new(0.5, -250, 0.5, -150)
 frame.BackgroundColor3 = Color3.fromRGB(15,15,20)
 frame.Parent = gui
-frame.Visible = true
 frame.Active = true
 frame.Draggable = true
 
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1,0,0,30)
 title.BackgroundTransparency = 1
-title.Text = "REMOTE LOGGER (TEST)"
+title.Text = "Remote Logger (F2)"
 title.TextColor3 = Color3.new(1,1,1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 14
@@ -46,50 +45,45 @@ layout.Parent = console
 layout.Padding = UDim.new(0,4)
 
 local function addLog(text)
-    print("[LOGGER]", text)
-
     local label = Instance.new("TextLabel")
     label.Size = UDim2.new(1,-5,0,18)
     label.BackgroundTransparency = 1
     label.Text = text
-    label.TextColor3 = Color3.fromRGB(255,255,255)
+    label.TextColor3 = Color3.fromRGB(180,255,180)
     label.Font = Enum.Font.Code
     label.TextSize = 12
     label.TextXAlignment = Enum.TextXAlignment.Left
     label.Parent = console
 
-    task.wait()
-    console.CanvasPosition = Vector2.new(0, console.AbsoluteCanvasSize.Y)
-end
-
--- TEST LOG (FORÇA PRA VER SE FUNCIONA)
-task.spawn(function()
-    task.wait(1)
-    addLog("[OK] GUI funcionando")
-end)
-
--- HOOK (SIMPLIFICADO)
-local success, err = pcall(function()
-    local mt = getrawmetatable(game)
-    local old = mt.__namecall
-    setreadonly(mt, false)
-
-    mt.__namecall = newcclosure(function(self, ...)
-        local method = getnamecallmethod()
-        if method == "FireServer" then
-            addLog("REMOTE: " .. self:GetFullName())
-        end
-        return old(self, ...)
+    task.defer(function()
+        console.CanvasPosition = Vector2.new(0, console.AbsoluteCanvasSize.Y)
     end)
-end)
-
-if not success then
-    addLog("[ERRO HOOK] " .. tostring(err))
-else
-    addLog("[OK] Hook aplicado")
 end
 
--- Toggle
+addLog("[✔] Logger iniciado")
+
+-- HOOK OTIMIZADO
+local mt = getrawmetatable(game)
+setreadonly(mt, false)
+
+local old = mt.__namecall
+
+mt.__namecall = newcclosure(function(self, ...)
+    local method = getnamecallmethod()
+
+    if method == "FireServer" then
+        -- filtra só coisas úteis
+        if tostring(self):find("RsPackage") then
+            task.spawn(function()
+                addLog("REMOTE: " .. self:GetFullName())
+            end)
+        end
+    end
+
+    return old(self, ...)
+end)
+
+-- Toggle UI
 UserInputService.InputBegan:Connect(function(input, gp)
     if gp then return end
     if input.KeyCode == Enum.KeyCode.F2 then
