@@ -73,7 +73,7 @@ mt.__namecall = newcclosure(function(self, ...)
 
     if method == "FireServer" then
         -- filtra só coisas úteis
-        if tostring(self):find("RsPackage") then
+        if tostring(self):find("Events") then
             task.spawn(function()
                 addLog("REMOTE: " .. self:GetFullName())
             end)
