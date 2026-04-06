@@ -1,6 +1,6 @@
 --//====================================================--
 --//           CYBER HUB - FFRE EDITION V4.3           --
---//        Kill Aura (Legit Replay) + Autofarm        --
+--//    Kill Aura (Persistent Args) + Autofarm        --
 --//====================================================--
 
 local CyberHub = (function()
@@ -17,6 +17,7 @@ local Core = (function()
 		CoreGui         = game:GetService("CoreGui"),
 		TweenService    = game:GetService("TweenService"),
 		ReplicatedStorage = game:GetService("ReplicatedStorage"),
+		HttpService     = game:GetService("HttpService"),
 	}
 
 	local CONFIG = {
@@ -32,6 +33,7 @@ local Core = (function()
 		VISUAL_NPC_FOLDER     = workspace:WaitForChild("Alive"),
 		TELEPORT_NPC_FOLDER   = workspace:WaitForChild("LiveNPCS"),
 		COMBAT_REMOTE         = Services.ReplicatedStorage:WaitForChild("Events"):WaitForChild("CombatEvent"),
+		ARGS_FILE             = "cyberhub_args.json",
 	}
 
 	local State = {
@@ -42,7 +44,7 @@ local Core = (function()
 		infiniteJumpEnabled= false,
 		speedEnabled       = false,
 		killAuraEnabled    = false,
-		killAuraMode       = "Closest",    -- "Closest" or "All"
+		killAuraMode       = "Closest",
 		killAuraRange      = 25,
 		killAuraDelay      = 0.37,
 		espEnabled         = false,
@@ -53,28 +55,22 @@ local Core = (function()
 		playerESPEnabled   = false,
 		fovEnabled         = false,
 
-		-- Valores
 		speedValue    = 160,
 
-		-- Kill Aura cache
 		capturedArgs  = nil,
 		lastAttack    = 0,
 		combatRemote  = CONFIG.COMBAT_REMOTE,
 
-		-- Referências de NPC/alvo
 		lockedNPC    = nil,
 		lockedTarget = nil,
 
-		-- Timers / cache
 		lastNPCScan   = 0,
 		npcCache      = {},
 		lastSpeedApply= 0,
 		charCache     = { root=nil, humanoid=nil, character=nil, lastUpdate=0 },
 
-		-- Conexões
 		connections = {},
 
-		-- Objetos visuais
 		espObjects       = {},
 		tracerLines      = {},
 		healthBarObjects = {},
@@ -82,7 +78,6 @@ local Core = (function()
 		fovDrawingCircle = nil,
 		teleportNPCList  = {},
 
-		-- GUI
 		guiVisible   = true,
 		currentPage  = "combat",
 		isTeleporting= false,
@@ -274,15 +269,139 @@ local NPCCache = (function()
 end)()
 
 --//====================================================--
---//                 KILL AURA SYSTEM                   --
+--//            KILL AURA (PERSISTENT)                  --
 --//====================================================--
 
 local KillAura = (function()
 	local State    = Core.State
 	local Services = Core.Services
 	local Cache    = Core.Cache
+	local CONFIG   = Core.CONFIG
 
-	-- Captura os argumentos reais do CombatEvent
+	-- Serializa um argumento para salvar em JSON
+	local function serializeArg(arg)
+		local t = typeof(arg)
+		if t == "number" or t == "string" or t == "boolean" then
+			return arg
+		elseif t == "CFrame" then
+			local x, y, z, R00, R01, R02, R10, R11, R12, R20, R21, R22 = arg:GetComponents()
+			return { __type = "CFrame", x=x, y=y, z=z, R00=R00, R01=R01, R02=R02, R10=R10, R11=R11, R12=R12, R20=R20, R21=R21, R22=R22 }
+		elseif t == "Instance" then
+			-- Salva o caminho completo da instância
+			local path = ""
+			local success, result = pcall(function()
+				return arg:GetFullName()
+			end)
+			if success and result then
+				path = result
+			else
+				path = arg.Name or "Unknown"
+			end
+			return { __type = "Instance", path = path }
+		else
+			return { __type = "unknown", value = tostring(arg) }
+		end
+	end
+
+	-- Desserializa um argumento a partir do JSON
+	local function deserializeArg(data)
+		if type(data) ~= "table" then return data end
+		if data.__type == "CFrame" then
+			return CFrame.new(
+				data.x, data.y, data.z,
+				data.R00, data.R01, data.R02,
+				data.R10, data.R11, data.R12,
+				data.R20, data.R21, data.R22
+			)
+		elseif data.__type == "Instance" then
+			local success, instance = pcall(function()
+				return game:GetService("CoreGui"):FindFirstChild("") -- hack para não errar
+			end)
+			-- Tenta encontrar a instância pelo caminho completo
+			local target = nil
+			pcall(function()
+				target = game:GetService("Players"):FindFirstChild("") -- gambiarra
+			end)
+			-- Melhor: usar globals
+			local function getInstanceFromPath(path)
+				local parts = {}
+				for part in string.gmatch(path, "[^%.]+") do
+					table.insert(parts, part)
+				end
+				local current = game
+				for _, part in ipairs(parts) do
+					if current:FindFirstChild(part) then
+						current = current[part]
+					else
+						return nil
+					end
+				end
+				return current
+			end
+			local inst = getInstanceFromPath(data.path)
+			if inst then return inst end
+			-- Fallback: retorna nil (será tratado depois)
+			return nil
+		else
+			return data.value
+		end
+	end
+
+	-- Salva os argumentos atuais no arquivo
+	local function saveArgs()
+		if not State.capturedArgs then return false end
+		local serialized = {}
+		for i, arg in ipairs(State.capturedArgs) do
+			serialized[i] = serializeArg(arg)
+		end
+		local json = Services.HttpService:JSONEncode(serialized)
+		local success, err = pcall(function()
+			writefile(CONFIG.ARGS_FILE, json)
+		end)
+		if success then
+			print("[CyberHub] Args saved to " .. CONFIG.ARGS_FILE)
+			return true
+		else
+			warn("[CyberHub] Failed to save args: " .. tostring(err))
+			return false
+		end
+	end
+
+	-- Carrega argumentos do arquivo
+	local function loadArgs()
+		local success, data = pcall(function()
+			return readfile(CONFIG.ARGS_FILE)
+		end)
+		if not success or not data then
+			print("[CyberHub] No saved args found.")
+			return false
+		end
+		local decoded = Services.HttpService:JSONDecode(data)
+		if type(decoded) ~= "table" then return false end
+		local args = {}
+		for i, ser in ipairs(decoded) do
+			args[i] = deserializeArg(ser)
+		end
+		-- Verifica se todos os argumentos foram restaurados (alguma instância pode ter falhado)
+		for i, arg in ipairs(args) do
+			if arg == nil and decoded[i] and decoded[i].__type == "Instance" then
+				warn("[CyberHub] Failed to restore instance: " .. decoded[i].path)
+				return false
+			end
+		end
+		State.capturedArgs = args
+		print("[CyberHub] Args loaded from file. Kill Aura ready.")
+		return true
+	end
+
+	-- Reseta os argumentos salvos
+	local function resetArgs()
+		State.capturedArgs = nil
+		pcall(function() deletefile(CONFIG.ARGS_FILE) end)
+		print("[CyberHub] Saved args deleted. Capture new args by attacking manually.")
+	end
+
+	-- Captura os argumentos do CombatEvent (hook)
 	local function captureArgs()
 		local remote = State.combatRemote
 		if not remote then return end
@@ -297,36 +416,35 @@ local KillAura = (function()
 			local method = getnamecallmethod()
 			if self == remote and method == "FireServer" then
 				State.capturedArgs = args
-				-- opcional: print("Args captured:", #args)
+				-- Salva automaticamente ao capturar
+				task.spawn(saveArgs)
 			end
 			return oldNamecall(self, ...)
 		end)
 	end
 
-	-- Gera o CFrame para o ataque (aponta do player para o NPC)
+	-- Gera o CFrame de ataque apontando para o NPC
 	local function getAttackCFrame(npcRoot)
 		local root = Utils.getCharComponents()
 		if not root then return nil end
-		-- CFrame apontando do jogador para o NPC (mesmo padrão do ataque manual)
 		return Cache.CFrame_new(root.Position, npcRoot.Position)
 	end
 
-	-- Executa o ataque contra um NPC específico
+	-- Executa o ataque contra um NPC
 	local function attackNPC(npc)
 		if not State.capturedArgs then return false end
 		local npcRoot = npc:FindFirstChild("HumanoidRootPart")
 		if not npcRoot then return false end
 
-		-- Clona os args capturados e substitui o CFrame (3º argumento) e talvez a arma
 		local argsCopy = {}
 		for i, v in ipairs(State.capturedArgs) do
 			argsCopy[i] = v
 		end
 
-		-- Ajusta o CFrame para o NPC alvo (posição e rotação)
-		argsCopy[3] = getAttackCFrame(npcRoot)
-		-- Se o 2º ou 5º argumento for a arma, pode manter igual (já que é a mesma instância)
-		-- Em muitos jogos, o 2º e 5º são a mesma arma (Fist), então não precisa trocar.
+		-- Substitui o CFrame (3º argumento) pelo novo apontando para o NPC
+		if argsCopy[3] then
+			argsCopy[3] = getAttackCFrame(npcRoot)
+		end
 
 		pcall(function()
 			State.combatRemote:FireServer(unpack(argsCopy))
@@ -337,7 +455,7 @@ local KillAura = (function()
 	-- Loop principal do Kill Aura
 	local function killAuraLoop()
 		if not State.killAuraEnabled then return end
-		if not State.capturedArgs then return end  -- aguarda primeiro ataque manual
+		if not State.capturedArgs then return end
 
 		local now = tick()
 		if now - State.lastAttack < State.killAuraDelay then return end
@@ -348,10 +466,13 @@ local KillAura = (function()
 		if State.killAuraMode == "Closest" then
 			local closest = NPCCache.findClosest()
 			if closest and NPCCache.isValid(closest) then
-				local dist = (root.Position - closest:FindFirstChild("HumanoidRootPart").Position).Magnitude
-				if dist <= State.killAuraRange then
-					attackNPC(closest)
-					State.lastAttack = now
+				local npcRoot = closest:FindFirstChild("HumanoidRootPart")
+				if npcRoot then
+					local dist = (root.Position - npcRoot.Position).Magnitude
+					if dist <= State.killAuraRange then
+						attackNPC(closest)
+						State.lastAttack = now
+					end
 				end
 			end
 		else -- Mode "All"
@@ -359,13 +480,16 @@ local KillAura = (function()
 			for _, data in ipairs(npcs) do
 				attackNPC(data.model)
 				State.lastAttack = now
-				task.wait(0.05) -- pequeno delay entre múltiplos ataques para não floodar
+				task.wait(0.05)
 			end
 		end
 	end
 
 	return {
 		captureArgs = captureArgs,
+		saveArgs    = saveArgs,
+		loadArgs    = loadArgs,
+		resetArgs   = resetArgs,
 		attackNPC   = attackNPC,
 		loop        = killAuraLoop,
 	}
@@ -1127,8 +1251,8 @@ local GUI = (function()
 
 		mainFrame = Instance.new("Frame")
 		mainFrame.Name              = "MainFrame"
-		mainFrame.Size              = Cache.UDim2_new(0, 320, 0, 480)
-		mainFrame.Position          = Cache.UDim2_new(0, 20, 0.5, -240)
+		mainFrame.Size              = Cache.UDim2_new(0, 320, 0, 520)
+		mainFrame.Position          = Cache.UDim2_new(0, 20, 0.5, -260)
 		mainFrame.BackgroundColor3  = Cache.Color3_fromRGB(13, 13, 18)
 		mainFrame.BorderSizePixel   = 0
 		mainFrame.Active            = true
@@ -1358,8 +1482,22 @@ local GUI = (function()
 
 		local _, autofarmDistSliderBtn, autofarmDistFill, autofarmDistLabel, autofarmDistMin, autofarmDistMax = createSlider(combatPage, "Autofarm Distance", 1, 25, State.autofarmDistance)
 
-		createSectionHeader(combatPage, "Kill Aura (Legit Replay)")
+		createSectionHeader(combatPage, "Kill Aura (Persistent Args)")
 		local _, killAuraToggle, killAuraBg, killAuraCircle = createToggle(combatPage, "Kill Aura (F2)", "Replay captured combat events", State.killAuraEnabled)
+
+		-- Botões de gerenciamento de args
+		local argsManageContainer = Instance.new("Frame")
+		argsManageContainer.Size = Cache.UDim2_new(1, 0, 0, 40)
+		argsManageContainer.BackgroundTransparency = 1
+		argsManageContainer.Parent = combatPage
+		local argsLayout = Instance.new("UIListLayout")
+		argsLayout.FillDirection = Enum.FillDirection.Horizontal
+		argsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		argsLayout.Padding = UDim.new(0, 10)
+		argsLayout.Parent = argsManageContainer
+
+		local saveArgsBtn = createButton(argsManageContainer, "💾 Save Args", Cache.Color3_fromRGB(80, 180, 255))
+		local resetArgsBtn = createButton(argsManageContainer, "🗑 Reset Args", Cache.Color3_fromRGB(255, 100, 100))
 
 		local modeContainer = Instance.new("Frame")
 		modeContainer.Size = Cache.UDim2_new(1, 0, 0, 50)
@@ -1442,7 +1580,7 @@ local GUI = (function()
 		local _, jumpToggle, jumpBg, jumpCircle = createToggle(combatPage, "Infinite Jump", "Jump infinitely without limit", State.infiniteJumpEnabled)
 		local _, lockOnToggle, lockOnBg, lockOnCircle = createToggle(combatPage, "Lock On Target", "Camera locks onto nearest enemy", State.lockOnEnabled)
 
-		--// VISUAL PAGE
+		--// VISUAL PAGE (mesmo de antes)
 		createSectionHeader(visualPage, "NPC Visual Features")
 		local _, espToggle, espBg, espCircle = createToggle(visualPage, "ESP Highlights", "See NPCs through walls", State.espEnabled)
 		local _, tracersToggle, tracersBg, tracersCircle = createToggle(visualPage, "Tracers", "Lines pointing to NPCs", State.tracersEnabled)
@@ -1451,7 +1589,7 @@ local GUI = (function()
 		local _, playerESPToggle, playerESPBg, playerESPCircle = createToggle(visualPage, "Player ESP", "See other players through walls", State.playerESPEnabled)
 		local _, fovToggle, fovBg, fovToggleCircle = createToggle(visualPage, "FOV Circle", "Display field of view circle", State.fovEnabled)
 
-		--// TELEPORT PAGE
+		--// TELEPORT PAGE (igual)
 		createSectionHeader(teleportPage, "Safe Teleport System")
 		local tpInfoContainer = Instance.new("Frame")
 		tpInfoContainer.Size = Cache.UDim2_new(1,0,0,60)
@@ -1537,7 +1675,7 @@ local GUI = (function()
 			Utils.animateToggle(killAuraBg, killAuraCircle, enabled)
 			if enabled then
 				if not State.capturedArgs then
-					print("[CyberHub] Kill Aura: No captured args yet. Attack an NPC manually first.")
+					print("[CyberHub] Kill Aura: No captured args. Attack an NPC manually or load saved args.")
 				end
 				Utils.disconnectConnection("killAura")
 				State.connections.killAura = Services.RunService.Heartbeat:Connect(KillAura.loop)
@@ -1546,6 +1684,18 @@ local GUI = (function()
 			end
 		end
 		killAuraToggle.MouseButton1Click:Connect(function() ToggleFunctions.killAura(not State.killAuraEnabled) end)
+
+		-- Botões de args
+		saveArgsBtn.MouseButton1Click:Connect(function()
+			if State.capturedArgs then
+				KillAura.saveArgs()
+			else
+				print("[CyberHub] No args to save. Attack an NPC first.")
+			end
+		end)
+		resetArgsBtn.MouseButton1Click:Connect(function()
+			KillAura.resetArgs()
+		end)
 
 		ToggleFunctions.speed = function(enabled)
 			State.speedEnabled = enabled
@@ -1655,7 +1805,6 @@ local Input = (function()
 	local player   = Services.Players.LocalPlayer
 
 	local function init(mainFrame, ToggleFunctions)
-		-- Infinite Jump
 		Services.UserInputService.JumpRequest:Connect(function()
 			if State.infiniteJumpEnabled then
 				local _, hum = Utils.getCharComponents()
@@ -1663,7 +1812,6 @@ local Input = (function()
 			end
 		end)
 
-		-- Hotkeys
 		Services.UserInputService.InputBegan:Connect(function(input, processed)
 			if processed then return end
 			if input.KeyCode == Enum.KeyCode.F1 then
@@ -1717,7 +1865,10 @@ Registry.register("KillAura", KillAura)
 local player = Core.Services.Players.LocalPlayer
 if not player then return end
 
--- Inicia captura de argumentos do CombatEvent
+-- Carrega args salvos (se existirem)
+KillAura.loadArgs()
+
+-- Inicia captura de argumentos (hook)
 KillAura.captureArgs()
 
 local guiResult       = GUI.build()
@@ -1734,10 +1885,11 @@ end)
 
 print("═══════════════════════════════════════════════")
 print("        CYBER HUB - FFRE EDITION V4.3         ")
-print("     Kill Aura (Legit Replay) + Autofarm      ")
+print("   Kill Aura (Persistent Args) + Autofarm    ")
 print("═══════════════════════════════════════════════")
 print("  ⚔️  Combat: Auto Farm (Behind/Above)")
 print("  🎯  Kill Aura (replay de ataques reais)")
+print("  💾  Args salvos automaticamente")
 print("  🚀  Movement: Speed | Infinite Jump | No Clip")
 print("  👁️  Visual: ESP | Tracers | Health Bars")
 print("  📍  Teleport: Ultra Smooth (Anti-Kick)")
@@ -1748,6 +1900,11 @@ print("  F3  - Toggle Autofarm")
 print("  KP1 - Toggle Speed")
 print("  KP2 - Toggle Infinite Jump")
 print("═══════════════════════════════════════════════")
+if State.capturedArgs then
+	print("[CyberHub] Kill Aura ready with loaded args.")
+else
+	print("[CyberHub] No args loaded. Attack an NPC manually to capture and save.")
+end
 
 return {
 	Registry = Registry,
