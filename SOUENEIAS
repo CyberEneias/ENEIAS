@@ -1,9 +1,6 @@
 --//====================================================--
 --//           CYBER HUB - FFRE EDITION V4.3           --
---//====================================================--
---//  Ultra Smooth Teleport (Anti-Kick) + Lock On       --
---//  ESP + Tracers + Health Bars (Workspace.Alive)     --
---//  Dual Autofarm Mode: Behind / Above NPC            --
+--//        Kill Aura (Legit Replay) + Autofarm        --
 --//====================================================--
 
 local CyberHub = (function()
@@ -13,32 +10,30 @@ local CyberHub = (function()
 --//====================================================--
 
 local Core = (function()
-	-- Serviços do Roblox
 	local Services = {
 		Players         = game:GetService("Players"),
 		RunService      = game:GetService("RunService"),
 		UserInputService= game:GetService("UserInputService"),
 		CoreGui         = game:GetService("CoreGui"),
 		TweenService    = game:GetService("TweenService"),
+		ReplicatedStorage = game:GetService("ReplicatedStorage"),
 	}
 
-	-- Configuração central (altere valores aqui)
 	local CONFIG = {
 		BACK_DISTANCE         = 3.5,
 		HEIGHT_OFFSET         = 2.5,
 		ABOVE_HEIGHT          = 8,
 		MAX_DISTANCE          = 60,
 		NPC_SCAN_INTERVAL     = 0.3,
-		M1_CLICK_DELAY        = 0.15,
 		CHAR_CACHE_UPDATE     = 0.5,
 		GUI_NAME              = "CyberHub",
 		TELEPORT_SPEED        = 150,
 		MAX_TELEPORT_DISTANCE = 500,
 		VISUAL_NPC_FOLDER     = workspace:WaitForChild("Alive"),
 		TELEPORT_NPC_FOLDER   = workspace:WaitForChild("LiveNPCS"),
+		COMBAT_REMOTE         = Services.ReplicatedStorage:WaitForChild("Events"):WaitForChild("CombatEvent"),
 	}
 
-	-- Estado global centralizado (sem variáveis globais soltas)
 	local State = {
 		-- Features
 		autofarmEnabled    = false,
@@ -46,7 +41,10 @@ local Core = (function()
 		autofarmDistance   = 8,
 		infiniteJumpEnabled= false,
 		speedEnabled       = false,
-		m1MacroEnabled     = false,
+		killAuraEnabled    = false,
+		killAuraMode       = "Closest",    -- "Closest" or "All"
+		killAuraRange      = 25,
+		killAuraDelay      = 0.37,
 		espEnabled         = false,
 		tracersEnabled     = false,
 		healthBarsEnabled  = false,
@@ -57,7 +55,11 @@ local Core = (function()
 
 		-- Valores
 		speedValue    = 160,
-		m1ClickDelay  = 0.15,
+
+		-- Kill Aura cache
+		capturedArgs  = nil,
+		lastAttack    = 0,
+		combatRemote  = CONFIG.COMBAT_REMOTE,
 
 		-- Referências de NPC/alvo
 		lockedNPC    = nil,
@@ -66,11 +68,10 @@ local Core = (function()
 		-- Timers / cache
 		lastNPCScan   = 0,
 		npcCache      = {},
-		lastM1Click   = 0,
 		lastSpeedApply= 0,
 		charCache     = { root=nil, humanoid=nil, character=nil, lastUpdate=0 },
 
-		-- Conexões do RunService
+		-- Conexões
 		connections = {},
 
 		-- Objetos visuais
@@ -78,7 +79,7 @@ local Core = (function()
 		tracerLines      = {},
 		healthBarObjects = {},
 		playerESPObjects = {},
-		fovDrawingCircle = nil,    -- Objeto Drawing (diferente do fovToggleCircle da GUI)
+		fovDrawingCircle = nil,
 		teleportNPCList  = {},
 
 		-- GUI
@@ -87,7 +88,6 @@ local Core = (function()
 		isTeleporting= false,
 	}
 
-	-- Cache de construtores frequentes (performance)
 	local Cache = {
 		Vector3_new    = Vector3.new,
 		Vector3_zero   = Vector3.zero,
@@ -112,7 +112,6 @@ local Utils = (function()
 	local Services = Core.Services
 	local player   = Services.Players.LocalPlayer
 
-	-- Desconecta uma conexão por nome
 	local function disconnectConnection(name)
 		if State.connections[name] then
 			State.connections[name]:Disconnect()
@@ -120,7 +119,6 @@ local Utils = (function()
 		end
 	end
 
-	-- Desconecta todas as conexões ativas
 	local function cleanAllConnections()
 		for name, conn in pairs(State.connections) do
 			if conn and conn.Connected then
@@ -130,7 +128,6 @@ local Utils = (function()
 		table.clear(State.connections)
 	end
 
-	-- Retorna componentes do personagem com cache
 	local function getCharComponents()
 		local now = tick()
 		if now - State.charCache.lastUpdate > CONFIG.CHAR_CACHE_UPDATE then
@@ -143,15 +140,12 @@ local Utils = (function()
 		return State.charCache.root, State.charCache.humanoid, State.charCache.character
 	end
 
-	-- Força atualização do cache do personagem
 	local function invalidateCharCache()
 		State.charCache.lastUpdate = 0
 	end
 
-	-- Anima toggle (tween visual)
 	local function animateToggle(bg, circle, enabled)
 		local TweenService = Services.TweenService
-		local Cache        = Core.Cache
 		TweenService:Create(bg, TweenInfo.new(0.2), {
 			BackgroundColor3 = enabled
 				and Cache.Color3_fromRGB(100, 180, 255)
@@ -178,20 +172,16 @@ end)()
 --//====================================================--
 
 local Registry = (function()
-	-- Tabela central de módulos registrados
 	local FeatureRegistry = {}
 
-	-- Registra um módulo de feature
 	local function RegisterFeature(name, module)
 		FeatureRegistry[name] = module
 	end
 
-	-- Obtém módulo registrado
 	local function GetFeature(name)
 		return FeatureRegistry[name]
 	end
 
-	-- Lista todas features registradas
 	local function GetAll()
 		return FeatureRegistry
 	end
@@ -213,7 +203,6 @@ local NPCCache = (function()
 	local Services = Core.Services
 	local player   = Services.Players.LocalPlayer
 
-	-- Atualiza lista de NPCs próximos e os ordena por distância
 	local function updateCache()
 		table.clear(State.npcCache)
 		local root = Utils.getCharComponents()
@@ -240,7 +229,6 @@ local NPCCache = (function()
 		table.sort(State.npcCache, function(a, b) return a.distance < b.distance end)
 	end
 
-	-- Retorna o NPC mais próximo (com cooldown de scan)
 	local function findClosest()
 		local now = tick()
 		if now - State.lastNPCScan > CONFIG.NPC_SCAN_INTERVAL then
@@ -250,7 +238,21 @@ local NPCCache = (function()
 		return State.npcCache[1] and State.npcCache[1].model
 	end
 
-	-- Valida se um NPC ainda é farmável
+	local function getAllWithin(range)
+		local now = tick()
+		if now - State.lastNPCScan > CONFIG.NPC_SCAN_INTERVAL then
+			updateCache()
+			State.lastNPCScan = now
+		end
+		local result = {}
+		for _, data in ipairs(State.npcCache) do
+			if data.distance <= range then
+				table.insert(result, data)
+			end
+		end
+		return result
+	end
+
 	local function isValid(npc)
 		if not npc or not npc.Parent then return false end
 		local hum     = npc:FindFirstChild("Humanoid")
@@ -266,7 +268,106 @@ local NPCCache = (function()
 	return {
 		update       = updateCache,
 		findClosest  = findClosest,
+		getAllWithin = getAllWithin,
 		isValid      = isValid,
+	}
+end)()
+
+--//====================================================--
+--//                 KILL AURA SYSTEM                   --
+--//====================================================--
+
+local KillAura = (function()
+	local State    = Core.State
+	local Services = Core.Services
+	local Cache    = Core.Cache
+
+	-- Captura os argumentos reais do CombatEvent
+	local function captureArgs()
+		local remote = State.combatRemote
+		if not remote then return end
+
+		local mt = getrawmetatable(game)
+		if not mt then return end
+		local oldNamecall = mt.__namecall
+		setreadonly(mt, false)
+
+		mt.__namecall = newcclosure(function(self, ...)
+			local args = {...}
+			local method = getnamecallmethod()
+			if self == remote and method == "FireServer" then
+				State.capturedArgs = args
+				-- opcional: print("Args captured:", #args)
+			end
+			return oldNamecall(self, ...)
+		end)
+	end
+
+	-- Gera o CFrame para o ataque (aponta do player para o NPC)
+	local function getAttackCFrame(npcRoot)
+		local root = Utils.getCharComponents()
+		if not root then return nil end
+		-- CFrame apontando do jogador para o NPC (mesmo padrão do ataque manual)
+		return Cache.CFrame_new(root.Position, npcRoot.Position)
+	end
+
+	-- Executa o ataque contra um NPC específico
+	local function attackNPC(npc)
+		if not State.capturedArgs then return false end
+		local npcRoot = npc:FindFirstChild("HumanoidRootPart")
+		if not npcRoot then return false end
+
+		-- Clona os args capturados e substitui o CFrame (3º argumento) e talvez a arma
+		local argsCopy = {}
+		for i, v in ipairs(State.capturedArgs) do
+			argsCopy[i] = v
+		end
+
+		-- Ajusta o CFrame para o NPC alvo (posição e rotação)
+		argsCopy[3] = getAttackCFrame(npcRoot)
+		-- Se o 2º ou 5º argumento for a arma, pode manter igual (já que é a mesma instância)
+		-- Em muitos jogos, o 2º e 5º são a mesma arma (Fist), então não precisa trocar.
+
+		pcall(function()
+			State.combatRemote:FireServer(unpack(argsCopy))
+		end)
+		return true
+	end
+
+	-- Loop principal do Kill Aura
+	local function killAuraLoop()
+		if not State.killAuraEnabled then return end
+		if not State.capturedArgs then return end  -- aguarda primeiro ataque manual
+
+		local now = tick()
+		if now - State.lastAttack < State.killAuraDelay then return end
+
+		local root = Utils.getCharComponents()
+		if not root then return end
+
+		if State.killAuraMode == "Closest" then
+			local closest = NPCCache.findClosest()
+			if closest and NPCCache.isValid(closest) then
+				local dist = (root.Position - closest:FindFirstChild("HumanoidRootPart").Position).Magnitude
+				if dist <= State.killAuraRange then
+					attackNPC(closest)
+					State.lastAttack = now
+				end
+			end
+		else -- Mode "All"
+			local npcs = NPCCache.getAllWithin(State.killAuraRange)
+			for _, data in ipairs(npcs) do
+				attackNPC(data.model)
+				State.lastAttack = now
+				task.wait(0.05) -- pequeno delay entre múltiplos ataques para não floodar
+			end
+		end
+	end
+
+	return {
+		captureArgs = captureArgs,
+		attackNPC   = attackNPC,
+		loop        = killAuraLoop,
 	}
 end)()
 
@@ -278,7 +379,6 @@ local ESP = (function()
 	local State  = Core.State
 	local Cache  = Core.Cache
 
-	--// NPC ESP (Highlight) //--
 	local function createESP(npc)
 		if State.espObjects[npc] then return end
 		if not npc:FindFirstChild("HumanoidRootPart") then return end
@@ -309,7 +409,6 @@ local ESP = (function()
 		table.clear(State.espObjects)
 	end
 
-	--// Tracers (Drawing Lines) //--
 	local function createTracer(npc)
 		if State.tracerLines[npc] then return end
 		if not npc:FindFirstChild("HumanoidRootPart") then return end
@@ -364,7 +463,6 @@ local ESP = (function()
 		table.clear(State.tracerLines)
 	end
 
-	--// Health Bars (BillboardGui) //--
 	local function createHealthBar(npc)
 		if State.healthBarObjects[npc] then return end
 		local npcRoot = npc:FindFirstChild("HumanoidRootPart")
@@ -402,7 +500,6 @@ local ESP = (function()
 		txt.Font              = Enum.Font.GothamBold
 		txt.Parent            = bg
 
-		-- Bordas arredondadas
 		local c1 = Instance.new("UICorner"); c1.CornerRadius = UDim.new(0,4); c1.Parent = bg
 		local c2 = Instance.new("UICorner"); c2.CornerRadius = UDim.new(0,4); c2.Parent = bar
 
@@ -448,7 +545,6 @@ local ESP = (function()
 		table.clear(State.healthBarObjects)
 	end
 
-	--// Player ESP //--
 	local function updatePlayerESP()
 		local Services = Core.Services
 		local player   = Services.Players.LocalPlayer
@@ -479,7 +575,6 @@ local ESP = (function()
 		end
 	end
 
-	--// FOV Circle (Drawing) //--
 	local function createFOVCircle()
 		if State.fovDrawingCircle then return end
 		local c          = Drawing.new("Circle")
@@ -507,7 +602,6 @@ local ESP = (function()
 		end
 	end
 
-	--// Loop de atualização de visuais (chamado por RenderStepped) //--
 	local function updateVisuals()
 		local CONFIG = Core.CONFIG
 		local player = Core.Services.Players.LocalPlayer
@@ -538,27 +632,21 @@ local ESP = (function()
 	end
 
 	return {
-		-- NPC ESP
 		createESP      = createESP,
 		removeESP      = removeESP,
 		clearAllESP    = clearAllESP,
-		-- Tracers
 		createTracer   = createTracer,
 		updateTracers  = updateTracers,
 		removeTracer   = removeTracer,
 		clearAllTracers= clearAllTracers,
-		-- Health Bars
 		createHealthBar  = createHealthBar,
 		updateHealthBar  = updateHealthBar,
 		removeHealthBar  = removeHealthBar,
 		clearAllHealthBars = clearAllHealthBars,
-		-- Player ESP
 		updatePlayerESP  = updatePlayerESP,
-		-- FOV
 		createFOVCircle  = createFOVCircle,
 		updateFOVCircle  = updateFOVCircle,
 		removeFOVCircle  = removeFOVCircle,
-		-- Update geral
 		updateVisuals    = updateVisuals,
 	}
 end)()
@@ -572,7 +660,6 @@ local Combat = (function()
 	local CONFIG = Core.CONFIG
 	local Cache  = Core.Cache
 
-	--// Lock On Target //--
 	local function lockOnLoop()
 		if not State.lockOnEnabled then return end
 		local camera = workspace.CurrentCamera
@@ -595,7 +682,6 @@ local Combat = (function()
 		end
 	end
 
-	--// Auto Farm (Behind / Above) //--
 	local function autofarmLoop()
 		if not State.autofarmEnabled then return end
 		local root = Utils.getCharComponents()
@@ -618,11 +704,9 @@ local Combat = (function()
 		root.AssemblyAngularVelocity = Cache.Vector3_zero
 
 		if State.autofarmMode == "Above" then
-			-- Posição fixa acima do NPC, olhando para baixo
 			local targetPos = npcRoot.Position + Cache.Vector3_new(0, State.autofarmDistance, 0)
 			root.CFrame = CFrame.new(targetPos) * CFrame.Angles(math.rad(-90), 0, 0)
 		else
-			-- Atrás do NPC na direção do LookVector
 			local backVec    = -npcRoot.CFrame.LookVector * State.autofarmDistance
 			local upVec      = Cache.Vector3_new(0, CONFIG.HEIGHT_OFFSET, 0)
 			local targetPos  = npcRoot.Position + backVec + upVec
@@ -630,24 +714,6 @@ local Combat = (function()
 		end
 	end
 
-	--// M1 Auto Click //--
-	local function simulateMouseClick()
-		local virtualInput = game:GetService("VirtualInputManager")
-		virtualInput:SendMouseButtonEvent(0, 0, 0, true, game, 0)
-		task.wait(0.01)
-		virtualInput:SendMouseButtonEvent(0, 0, 0, false, game, 0)
-	end
-
-	local function m1MacroLoop()
-		if not State.m1MacroEnabled then return end
-		local now = tick()
-		if now - State.lastM1Click >= State.m1ClickDelay then
-			pcall(simulateMouseClick)
-			State.lastM1Click = now
-		end
-	end
-
-	--// Speed Boost //--
 	local function speedLoop()
 		if not State.speedEnabled then return end
 		local root, hum = Utils.getCharComponents()
@@ -663,7 +729,6 @@ local Combat = (function()
 	return {
 		lockOnLoop   = lockOnLoop,
 		autofarmLoop = autofarmLoop,
-		m1MacroLoop  = m1MacroLoop,
 		speedLoop    = speedLoop,
 	}
 end)()
@@ -675,7 +740,6 @@ end)()
 local Movement = (function()
 	local player = Core.Services.Players.LocalPlayer
 
-	--// No Clip //--
 	local function enableNoClip()
 		local char = player.Character
 		if not char then return end
@@ -712,7 +776,6 @@ local Teleport = (function()
 	local Cache    = Core.Cache
 	local Services = Core.Services
 
-	--// Teleporte suave (anti-kick) com divisão por chunks //--
 	local function ultraSmoothTeleport(targetPosition)
 		if State.isTeleporting then return false end
 		local root = Utils.getCharComponents()
@@ -722,7 +785,6 @@ local Teleport = (function()
 		local startPos = root.Position
 		local distance = (targetPosition - startPos).Magnitude
 
-		-- Teleporte direto para distâncias pequenas
 		if distance < 10 then
 			root.CFrame = Cache.CFrame_new(targetPosition)
 			State.isTeleporting = false
@@ -732,7 +794,6 @@ local Teleport = (function()
 		local travelTime = distance / CONFIG.TELEPORT_SPEED
 
 		if distance > CONFIG.MAX_TELEPORT_DISTANCE then
-			-- Divide em chunks para evitar anti-cheat
 			local direction = (targetPosition - startPos).Unit
 			local numChunks = math.ceil(distance / CONFIG.MAX_TELEPORT_DISTANCE)
 
@@ -766,7 +827,6 @@ local Teleport = (function()
 		return true
 	end
 
-	--// Teleporta para NPC pelo nome //--
 	local function safeTeleportToNPC(npcName)
 		local root = Utils.getCharComponents()
 		if not root then return false, "Character not found" end
@@ -786,7 +846,6 @@ local Teleport = (function()
 		return false, "NPC not found"
 	end
 
-	--// Lista NPCs disponíveis para teleporte //--
 	local function getNPCList()
 		local list = {}
 		for _, npc in ipairs(CONFIG.TELEPORT_NPC_FOLDER:GetChildren()) do
@@ -817,12 +876,8 @@ local GUI = (function()
 	local Cache    = Core.Cache
 	local Services = Core.Services
 
-	-- Referência global da screenGui para cleanup
 	local screenGui, mainFrame
 
-	--// Componentes base de GUI //--
-
-	-- Cria cabeçalho de seção
 	local function createSectionHeader(parent, text)
 		local frame = Instance.new("Frame")
 		frame.Size              = Cache.UDim2_new(1, 0, 0, 30)
@@ -858,7 +913,6 @@ local GUI = (function()
 		return frame
 	end
 
-	-- Cria toggle com label e descrição opcional
 	local function createToggle(parent, labelText, descText, defaultState)
 		local container             = Instance.new("Frame")
 		container.Size              = Cache.UDim2_new(1, 0, 0, descText and 55 or 40)
@@ -927,11 +981,9 @@ local GUI = (function()
 		toggleBtn.Text              = ""
 		toggleBtn.Parent            = toggleBg
 
-		-- Retorna: container, botão clicável, background do toggle, círculo animado
 		return container, toggleBtn, toggleBg, toggleCircle
 	end
 
-	-- Cria slider com label, min, max e valor padrão
 	local function createSlider(parent, labelText, minVal, maxVal, defaultVal)
 		local container             = Instance.new("Frame")
 		container.Size              = Cache.UDim2_new(1, 0, 0, 50)
@@ -993,11 +1045,9 @@ local GUI = (function()
 		sliderBtn.Text              = ""
 		sliderBtn.Parent            = sliderBg
 
-		-- Retorna: container, botão, fill, label de valor, min, max
 		return container, sliderBtn, sliderFill, valueLabel, minVal, maxVal
 	end
 
-	-- Cria botão simples
 	local function createButton(parent, text, color)
 		local btn               = Instance.new("TextButton")
 		btn.Size                = Cache.UDim2_new(1, 0, 0, 35)
@@ -1017,7 +1067,6 @@ local GUI = (function()
 		return btn
 	end
 
-	-- Cria página (ScrollingFrame)
 	local function createPage(name, parent)
 		local page = Instance.new("ScrollingFrame")
 		page.Name                   = name
@@ -1043,7 +1092,6 @@ local GUI = (function()
 		return page
 	end
 
-	-- Cria botão da sidebar
 	local function createSidebarBtn(parent, icon, name)
 		local btn               = Instance.new("TextButton")
 		btn.Name                = name
@@ -1064,29 +1112,23 @@ local GUI = (function()
 		return btn
 	end
 
-	--// Tabela de funções de toggle (conectada com a GUI) //--
-	-- Separada para ser acessada por Input e GUI
 	local ToggleFunctions = {}
 
-	--// Construção da GUI principal //--
 	local function build()
-		-- Remove GUI antiga se existir
 		pcall(function()
 			Core.Services.CoreGui:FindFirstChild(CONFIG.GUI_NAME):Destroy()
 		end)
 
-		-- ScreenGui raiz
 		screenGui = Instance.new("ScreenGui")
 		screenGui.Name           = CONFIG.GUI_NAME
 		screenGui.ResetOnSpawn   = false
 		screenGui.IgnoreGuiInset = true
 		screenGui.Parent         = Services.CoreGui
 
-		-- Frame principal
 		mainFrame = Instance.new("Frame")
 		mainFrame.Name              = "MainFrame"
-		mainFrame.Size              = Cache.UDim2_new(0, 320, 0, 450)
-		mainFrame.Position          = Cache.UDim2_new(0, 20, 0.5, -225)
+		mainFrame.Size              = Cache.UDim2_new(0, 320, 0, 480)
+		mainFrame.Position          = Cache.UDim2_new(0, 20, 0.5, -240)
 		mainFrame.BackgroundColor3  = Cache.Color3_fromRGB(13, 13, 18)
 		mainFrame.BorderSizePixel   = 0
 		mainFrame.Active            = true
@@ -1103,7 +1145,6 @@ local GUI = (function()
 		borderGradient.Transparency= 0.5
 		borderGradient.Parent      = mainFrame
 
-		--// Header //--
 		local header = Instance.new("Frame")
 		header.Name             = "Header"
 		header.Size             = Cache.UDim2_new(1, 0, 0, 35)
@@ -1179,7 +1220,6 @@ local GUI = (function()
 			screenGui:Destroy()
 		end)
 
-		--// Sidebar //--
 		local sidebar = Instance.new("Frame")
 		sidebar.Name            = "Sidebar"
 		sidebar.Size            = Cache.UDim2_new(0, 45, 1, -40)
@@ -1206,7 +1246,6 @@ local GUI = (function()
 		local teleportBtn = createSidebarBtn(sidebar, "📍", "TeleportBtn")
 		local miscBtn     = createSidebarBtn(sidebar, "🔧", "MiscBtn")
 
-		--// Content Area //--
 		local contentArea = Instance.new("Frame")
 		contentArea.Name                = "ContentArea"
 		contentArea.Size                = Cache.UDim2_new(1, -60, 1, -40)
@@ -1219,7 +1258,6 @@ local GUI = (function()
 		local teleportPage = createPage("TeleportPage", contentArea)
 		local miscPage     = createPage("MiscPage",     contentArea)
 
-		-- Troca de página ativa
 		local allPages = {combatPage, visualPage, teleportPage, miscPage}
 		local allBtns  = {combatBtn, visualBtn, teleportBtn, miscBtn}
 
@@ -1241,16 +1279,10 @@ local GUI = (function()
 
 		switchPage(combatPage, combatBtn)
 
-		--//====================================================--
-		--//                  COMBAT PAGE                       --
-		--//====================================================--
-
+		--// COMBAT PAGE
 		createSectionHeader(combatPage, "Auto Farm Settings")
+		local _, autofarmToggle, autofarmBg, autofarmCircle = createToggle(combatPage, "Auto Farm", "Automatically farm the closest NPC", State.autofarmEnabled)
 
-		local _, autofarmToggle, autofarmBg, autofarmCircle = createToggle(
-			combatPage, "Auto Farm", "Automatically farm the closest NPC", State.autofarmEnabled)
-
-		-- Seletor de modo: Behind / Above
 		local farmModeContainer = Instance.new("Frame")
 		farmModeContainer.Name            = "FarmModeContainer"
 		farmModeContainer.Size            = Cache.UDim2_new(1, 0, 0, 78)
@@ -1316,173 +1348,177 @@ local GUI = (function()
 			farmModeAboveBtn.TextColor3        = isBehind and Cache.Color3_fromRGB(180,180,200) or Cache.Color3_white
 		end
 
-		farmModeBehindBtn.MouseButton1Click:Connect(function()
-			State.autofarmMode = "Behind"; updateFarmPositionVisuals()
-		end)
-		farmModeAboveBtn.MouseButton1Click:Connect(function()
-			State.autofarmMode = "Above"; updateFarmPositionVisuals()
-		end)
-		farmModeBehindBtn.MouseEnter:Connect(function()
-			if State.autofarmMode ~= "Behind" then
-				farmModeBehindBtn.BackgroundColor3 = Cache.Color3_fromRGB(55,55,70)
-			end
-		end)
+		farmModeBehindBtn.MouseButton1Click:Connect(function() State.autofarmMode = "Behind"; updateFarmPositionVisuals() end)
+		farmModeAboveBtn.MouseButton1Click:Connect(function() State.autofarmMode = "Above"; updateFarmPositionVisuals() end)
+		farmModeBehindBtn.MouseEnter:Connect(function() if State.autofarmMode ~= "Behind" then farmModeBehindBtn.BackgroundColor3 = Cache.Color3_fromRGB(55,55,70) end end)
 		farmModeBehindBtn.MouseLeave:Connect(updateFarmPositionVisuals)
-		farmModeAboveBtn.MouseEnter:Connect(function()
-			if State.autofarmMode ~= "Above" then
-				farmModeAboveBtn.BackgroundColor3 = Cache.Color3_fromRGB(55,55,70)
-			end
-		end)
+		farmModeAboveBtn.MouseEnter:Connect(function() if State.autofarmMode ~= "Above" then farmModeAboveBtn.BackgroundColor3 = Cache.Color3_fromRGB(55,55,70) end end)
 		farmModeAboveBtn.MouseLeave:Connect(updateFarmPositionVisuals)
 		updateFarmPositionVisuals()
 
-		-- Slider: distância do autofarm
-		local _, autofarmDistSliderBtn, autofarmDistFill, autofarmDistLabel, autofarmDistMin, autofarmDistMax = createSlider(
-			combatPage, "Autofarm Distance", 1, 25, State.autofarmDistance)
+		local _, autofarmDistSliderBtn, autofarmDistFill, autofarmDistLabel, autofarmDistMin, autofarmDistMax = createSlider(combatPage, "Autofarm Distance", 1, 25, State.autofarmDistance)
 
-		local _, lockOnToggle, lockOnBg, lockOnCircle = createToggle(
-			combatPage, "Lock On Target", "Camera locks onto nearest enemy", State.lockOnEnabled)
+		createSectionHeader(combatPage, "Kill Aura (Legit Replay)")
+		local _, killAuraToggle, killAuraBg, killAuraCircle = createToggle(combatPage, "Kill Aura (F2)", "Replay captured combat events", State.killAuraEnabled)
 
-		local _, m1Toggle, m1Bg, m1Circle = createToggle(
-			combatPage, "M1 Auto Click (F2)", "Automatically click M1 button", State.m1MacroEnabled)
+		local modeContainer = Instance.new("Frame")
+		modeContainer.Size = Cache.UDim2_new(1, 0, 0, 50)
+		modeContainer.BackgroundColor3 = Cache.Color3_fromRGB(18, 18, 25)
+		modeContainer.BorderSizePixel = 0
+		modeContainer.Parent = combatPage
+		local modeCorner = Instance.new("UICorner"); modeCorner.CornerRadius = UDim.new(0,6); modeCorner.Parent = modeContainer
 
-		local _, m1SliderBtn, m1SliderFill, m1ValueLabel, m1Min, m1Max = createSlider(
-			combatPage, "M1 Click Delay", 0.05, 1, State.m1ClickDelay)
+		local modeLabel = Instance.new("TextLabel")
+		modeLabel.Size = Cache.UDim2_new(1, -20, 0, 18)
+		modeLabel.Position = Cache.UDim2_new(0,10,0,6)
+		modeLabel.BackgroundTransparency = 1
+		modeLabel.Text = "Attack Mode"
+		modeLabel.Font = Enum.Font.GothamBold
+		modeLabel.TextSize = 11
+		modeLabel.TextColor3 = Cache.Color3_fromRGB(180,180,200)
+		modeLabel.TextXAlignment = Enum.TextXAlignment.Left
+		modeLabel.Parent = modeContainer
 
-		createSectionHeader(combatPage, "Movement Settings")
+		local modeBtnFrame = Instance.new("Frame")
+		modeBtnFrame.Size = Cache.UDim2_new(1, -20, 0, 28)
+		modeBtnFrame.Position = Cache.UDim2_new(0,10,0,26)
+		modeBtnFrame.BackgroundTransparency = 1
+		modeBtnFrame.Parent = modeContainer
 
-		local _, speedToggle, speedBg, speedCircle = createToggle(
-			combatPage, "Speed Boost", "Increase movement speed", State.speedEnabled)
+		local modeLayout = Instance.new("UIListLayout")
+		modeLayout.FillDirection = Enum.FillDirection.Horizontal
+		modeLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+		modeLayout.Padding = UDim.new(0,8)
+		modeLayout.Parent = modeBtnFrame
 
-		local _, speedSliderBtn, speedSliderFill, speedValueLabel, speedMin, speedMax = createSlider(
-			combatPage, "Speed Value", 50, 300, State.speedValue)
+		local closestModeBtn = Instance.new("TextButton")
+		closestModeBtn.Size = Cache.UDim2_new(0,100,0,28)
+		closestModeBtn.BackgroundColor3 = Cache.Color3_fromRGB(100,180,255)
+		closestModeBtn.Text = "Closest"
+		closestModeBtn.Font = Enum.Font.GothamBold
+		closestModeBtn.TextSize = 11
+		closestModeBtn.TextColor3 = Cache.Color3_white
+		closestModeBtn.BorderSizePixel = 0
+		closestModeBtn.AutoButtonColor = false
+		closestModeBtn.Parent = modeBtnFrame
+		local c1 = Instance.new("UICorner"); c1.CornerRadius = UDim.new(0,6); c1.Parent = closestModeBtn
 
-		local _, jumpToggle, jumpBg, jumpCircle = createToggle(
-			combatPage, "Infinite Jump", "Jump infinitely without limit", State.infiniteJumpEnabled)
+		local allModeBtn = Instance.new("TextButton")
+		allModeBtn.Size = Cache.UDim2_new(0,100,0,28)
+		allModeBtn.BackgroundColor3 = Cache.Color3_fromRGB(40,40,55)
+		allModeBtn.Text = "All in Range"
+		allModeBtn.Font = Enum.Font.GothamBold
+		allModeBtn.TextSize = 11
+		allModeBtn.TextColor3 = Cache.Color3_fromRGB(180,180,200)
+		allModeBtn.BorderSizePixel = 0
+		allModeBtn.AutoButtonColor = false
+		allModeBtn.Parent = modeBtnFrame
+		local c2 = Instance.new("UICorner"); c2.CornerRadius = UDim.new(0,6); c2.Parent = allModeBtn
 
-		--//====================================================--
-		--//                  VISUAL PAGE                       --
-		--//====================================================--
-
-		createSectionHeader(visualPage, "NPC Visual Features")
-
-		local _, espToggle, espBg, espCircle = createToggle(
-			visualPage, "ESP Highlights", "See NPCs through walls", State.espEnabled)
-
-		local _, tracersToggle, tracersBg, tracersCircle = createToggle(
-			visualPage, "Tracers", "Lines pointing to NPCs", State.tracersEnabled)
-
-		local _, healthBarsToggle, healthBarsBg, healthBarsCircle = createToggle(
-			visualPage, "Health Bars", "Display NPC health bars", State.healthBarsEnabled)
-
-		createSectionHeader(visualPage, "Player Visual Features")
-
-		local _, playerESPToggle, playerESPBg, playerESPCircle = createToggle(
-			visualPage, "Player ESP", "See other players through walls", State.playerESPEnabled)
-
-		local _, fovToggle, fovBg, fovToggleCircle = createToggle(
-			visualPage, "FOV Circle", "Display field of view circle", State.fovEnabled)
-
-		--//====================================================--
-		--//                TELEPORT PAGE                       --
-		--//====================================================--
-
-		createSectionHeader(teleportPage, "Safe Teleport System")
-
-		local tpInfoContainer = Instance.new("Frame")
-		tpInfoContainer.Size              = Cache.UDim2_new(1, 0, 0, 60)
-		tpInfoContainer.BackgroundColor3  = Cache.Color3_fromRGB(100, 180, 255)
-		tpInfoContainer.BackgroundTransparency = 0.9
-		tpInfoContainer.BorderSizePixel   = 0
-		tpInfoContainer.Parent            = teleportPage
-
-		local tpInfoCorner = Instance.new("UICorner")
-		tpInfoCorner.CornerRadius = UDim.new(0, 6)
-		tpInfoCorner.Parent = tpInfoContainer
-
-		local tpInfoLabel = Instance.new("TextLabel")
-		tpInfoLabel.Size              = Cache.UDim2_new(1, -20, 1, 0)
-		tpInfoLabel.Position          = Cache.UDim2_new(0, 10, 0, 0)
-		tpInfoLabel.BackgroundTransparency = 1
-		tpInfoLabel.Text              = "📍 Ultra Smooth Teleport\nAnti-kick protection for long distances\nClick any NPC to teleport safely"
-		tpInfoLabel.Font              = Enum.Font.Gotham
-		tpInfoLabel.TextSize          = 10
-		tpInfoLabel.TextColor3        = Cache.Color3_white
-		tpInfoLabel.TextXAlignment    = Enum.TextXAlignment.Left
-		tpInfoLabel.TextWrapped       = true
-		tpInfoLabel.Parent            = tpInfoContainer
-
-		local refreshNPCBtn = createButton(teleportPage, "🔄 Refresh NPC List", Cache.Color3_fromRGB(80, 200, 120))
-
-		local npcListContainer = Instance.new("Frame")
-		npcListContainer.Name              = "NPCListContainer"
-		npcListContainer.Size              = Cache.UDim2_new(1, 0, 0, 0)
-		npcListContainer.AutomaticSize     = Enum.AutomaticSize.Y
-		npcListContainer.BackgroundTransparency = 1
-		npcListContainer.Parent            = teleportPage
-
-		local npcListLayout = Instance.new("UIListLayout")
-		npcListLayout.Padding   = UDim.new(0, 5)
-		npcListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-		npcListLayout.Parent    = npcListContainer
-
-		local function populateNPCList()
-			for _, child in ipairs(npcListContainer:GetChildren()) do
-				if child:IsA("TextButton") then child:Destroy() end
-			end
-
-			local npcList = Teleport.getNPCList()
-			State.teleportNPCList = npcList
-
-			for _, npcName in ipairs(npcList) do
-				local npcBtn              = Instance.new("TextButton")
-				npcBtn.Size               = Cache.UDim2_new(1, 0, 0, 32)
-				npcBtn.BackgroundColor3   = Cache.Color3_fromRGB(18, 18, 25)
-				npcBtn.Text               = "   📌 " .. npcName
-				npcBtn.Font               = Enum.Font.Gotham
-				npcBtn.TextSize           = 11
-				npcBtn.TextColor3         = Cache.Color3_white
-				npcBtn.TextXAlignment     = Enum.TextXAlignment.Left
-				npcBtn.BorderSizePixel    = 0
-				npcBtn.AutoButtonColor    = false
-				npcBtn.Parent             = npcListContainer
-
-				local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0,6); c.Parent = npcBtn
-
-				npcBtn.MouseEnter:Connect(function()
-					npcBtn.BackgroundColor3 = Cache.Color3_fromRGB(25, 25, 35)
-				end)
-				npcBtn.MouseLeave:Connect(function()
-					npcBtn.BackgroundColor3 = Cache.Color3_fromRGB(18, 18, 25)
-				end)
-				npcBtn.MouseButton1Click:Connect(function()
-					local success = Teleport.safeTeleportToNPC(npcName)
-					npcBtn.BackgroundColor3 = success
-						and Cache.Color3_fromRGB(80, 200, 120)
-						or  Cache.Color3_fromRGB(200, 50, 50)
-					task.wait(0.5)
-					npcBtn.BackgroundColor3 = Cache.Color3_fromRGB(18, 18, 25)
-				end)
+		local function updateModeButtons()
+			if State.killAuraMode == "Closest" then
+				closestModeBtn.BackgroundColor3 = Cache.Color3_fromRGB(100,180,255)
+				closestModeBtn.TextColor3 = Cache.Color3_white
+				allModeBtn.BackgroundColor3 = Cache.Color3_fromRGB(40,40,55)
+				allModeBtn.TextColor3 = Cache.Color3_fromRGB(180,180,200)
+			else
+				closestModeBtn.BackgroundColor3 = Cache.Color3_fromRGB(40,40,55)
+				closestModeBtn.TextColor3 = Cache.Color3_fromRGB(180,180,200)
+				allModeBtn.BackgroundColor3 = Cache.Color3_fromRGB(100,180,255)
+				allModeBtn.TextColor3 = Cache.Color3_white
 			end
 		end
 
+		closestModeBtn.MouseButton1Click:Connect(function() State.killAuraMode = "Closest"; updateModeButtons() end)
+		allModeBtn.MouseButton1Click:Connect(function() State.killAuraMode = "All"; updateModeButtons() end)
+		updateModeButtons()
+
+		local _, rangeSliderBtn, rangeFill, rangeLabel, rangeMin, rangeMax = createSlider(combatPage, "Kill Aura Range", 5, 60, State.killAuraRange)
+		local _, delaySliderBtn, delayFill, delayLabel, delayMin, delayMax = createSlider(combatPage, "Attack Delay (s)", 0.2, 0.6, State.killAuraDelay)
+
+		createSectionHeader(combatPage, "Movement Settings")
+		local _, speedToggle, speedBg, speedCircle = createToggle(combatPage, "Speed Boost", "Increase movement speed", State.speedEnabled)
+		local _, speedSliderBtn, speedSliderFill, speedValueLabel, speedMin, speedMax = createSlider(combatPage, "Speed Value", 50, 300, State.speedValue)
+		local _, jumpToggle, jumpBg, jumpCircle = createToggle(combatPage, "Infinite Jump", "Jump infinitely without limit", State.infiniteJumpEnabled)
+		local _, lockOnToggle, lockOnBg, lockOnCircle = createToggle(combatPage, "Lock On Target", "Camera locks onto nearest enemy", State.lockOnEnabled)
+
+		--// VISUAL PAGE
+		createSectionHeader(visualPage, "NPC Visual Features")
+		local _, espToggle, espBg, espCircle = createToggle(visualPage, "ESP Highlights", "See NPCs through walls", State.espEnabled)
+		local _, tracersToggle, tracersBg, tracersCircle = createToggle(visualPage, "Tracers", "Lines pointing to NPCs", State.tracersEnabled)
+		local _, healthBarsToggle, healthBarsBg, healthBarsCircle = createToggle(visualPage, "Health Bars", "Display NPC health bars", State.healthBarsEnabled)
+		createSectionHeader(visualPage, "Player Visual Features")
+		local _, playerESPToggle, playerESPBg, playerESPCircle = createToggle(visualPage, "Player ESP", "See other players through walls", State.playerESPEnabled)
+		local _, fovToggle, fovBg, fovToggleCircle = createToggle(visualPage, "FOV Circle", "Display field of view circle", State.fovEnabled)
+
+		--// TELEPORT PAGE
+		createSectionHeader(teleportPage, "Safe Teleport System")
+		local tpInfoContainer = Instance.new("Frame")
+		tpInfoContainer.Size = Cache.UDim2_new(1,0,0,60)
+		tpInfoContainer.BackgroundColor3 = Cache.Color3_fromRGB(100,180,255)
+		tpInfoContainer.BackgroundTransparency = 0.9
+		tpInfoContainer.BorderSizePixel = 0
+		tpInfoContainer.Parent = teleportPage
+		local tpInfoCorner = Instance.new("UICorner"); tpInfoCorner.CornerRadius = UDim.new(0,6); tpInfoCorner.Parent = tpInfoContainer
+		local tpInfoLabel = Instance.new("TextLabel")
+		tpInfoLabel.Size = Cache.UDim2_new(1,-20,1,0)
+		tpInfoLabel.Position = Cache.UDim2_new(0,10,0,0)
+		tpInfoLabel.BackgroundTransparency = 1
+		tpInfoLabel.Text = "📍 Ultra Smooth Teleport\nAnti-kick protection for long distances\nClick any NPC to teleport safely"
+		tpInfoLabel.Font = Enum.Font.Gotham
+		tpInfoLabel.TextSize = 10
+		tpInfoLabel.TextColor3 = Cache.Color3_white
+		tpInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
+		tpInfoLabel.TextWrapped = true
+		tpInfoLabel.Parent = tpInfoContainer
+
+		local refreshNPCBtn = createButton(teleportPage, "🔄 Refresh NPC List", Cache.Color3_fromRGB(80, 200, 120))
+		local npcListContainer = Instance.new("Frame")
+		npcListContainer.Name = "NPCListContainer"
+		npcListContainer.Size = Cache.UDim2_new(1,0,0,0)
+		npcListContainer.AutomaticSize = Enum.AutomaticSize.Y
+		npcListContainer.BackgroundTransparency = 1
+		npcListContainer.Parent = teleportPage
+		local npcListLayout = Instance.new("UIListLayout")
+		npcListLayout.Padding = UDim.new(0,5)
+		npcListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+		npcListLayout.Parent = npcListContainer
+
+		local function populateNPCList()
+			for _, child in ipairs(npcListContainer:GetChildren()) do if child:IsA("TextButton") then child:Destroy() end end
+			local npcList = Teleport.getNPCList()
+			State.teleportNPCList = npcList
+			for _, npcName in ipairs(npcList) do
+				local npcBtn = Instance.new("TextButton")
+				npcBtn.Size = Cache.UDim2_new(1,0,0,32)
+				npcBtn.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
+				npcBtn.Text = "   📌 " .. npcName
+				npcBtn.Font = Enum.Font.Gotham
+				npcBtn.TextSize = 11
+				npcBtn.TextColor3 = Cache.Color3_white
+				npcBtn.TextXAlignment = Enum.TextXAlignment.Left
+				npcBtn.BorderSizePixel = 0
+				npcBtn.AutoButtonColor = false
+				npcBtn.Parent = npcListContainer
+				local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0,6); c.Parent = npcBtn
+				npcBtn.MouseEnter:Connect(function() npcBtn.BackgroundColor3 = Cache.Color3_fromRGB(25,25,35) end)
+				npcBtn.MouseLeave:Connect(function() npcBtn.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25) end)
+				npcBtn.MouseButton1Click:Connect(function()
+					local success = Teleport.safeTeleportToNPC(npcName)
+					npcBtn.BackgroundColor3 = success and Cache.Color3_fromRGB(80,200,120) or Cache.Color3_fromRGB(200,50,50)
+					task.wait(0.5)
+					npcBtn.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
+				end)
+			end
+		end
 		refreshNPCBtn.MouseButton1Click:Connect(populateNPCList)
 		task.spawn(function() task.wait(1); populateNPCList() end)
 
-		--//====================================================--
-		--//                   MISC PAGE                        --
-		--//====================================================--
-
+		--// MISC PAGE
 		createSectionHeader(miscPage, "Misc Features")
+		local _, noClipToggle, noClipBg, noClipCircle = createToggle(miscPage, "No Clip", "Walk through walls", State.noClipEnabled)
 
-		local _, noClipToggle, noClipBg, noClipCircle = createToggle(
-			miscPage, "No Clip", "Walk through walls", State.noClipEnabled)
-
-		--//====================================================--
-		--//              TOGGLE FUNCTIONS (BINDINGS)           --
-		--//====================================================--
-
-		-- Autofarm
+		--// TOGGLE FUNCTIONS
 		ToggleFunctions.autofarm = function(enabled)
 			State.autofarmEnabled = enabled
 			Utils.animateToggle(autofarmBg, autofarmCircle, enabled)
@@ -1494,11 +1530,70 @@ local GUI = (function()
 				State.lockedNPC = nil
 			end
 		end
-		autofarmToggle.MouseButton1Click:Connect(function()
-			ToggleFunctions.autofarm(not State.autofarmEnabled)
-		end)
+		autofarmToggle.MouseButton1Click:Connect(function() ToggleFunctions.autofarm(not State.autofarmEnabled) end)
 
-		-- Lock On
+		ToggleFunctions.killAura = function(enabled)
+			State.killAuraEnabled = enabled
+			Utils.animateToggle(killAuraBg, killAuraCircle, enabled)
+			if enabled then
+				if not State.capturedArgs then
+					print("[CyberHub] Kill Aura: No captured args yet. Attack an NPC manually first.")
+				end
+				Utils.disconnectConnection("killAura")
+				State.connections.killAura = Services.RunService.Heartbeat:Connect(KillAura.loop)
+			else
+				Utils.disconnectConnection("killAura")
+			end
+		end
+		killAuraToggle.MouseButton1Click:Connect(function() ToggleFunctions.killAura(not State.killAuraEnabled) end)
+
+		ToggleFunctions.speed = function(enabled)
+			State.speedEnabled = enabled
+			Utils.animateToggle(speedBg, speedCircle, enabled)
+			if enabled then
+				Utils.disconnectConnection("speed")
+				State.connections.speed = Services.RunService.Heartbeat:Connect(Combat.speedLoop)
+			else
+				Utils.disconnectConnection("speed")
+			end
+		end
+		speedToggle.MouseButton1Click:Connect(function() ToggleFunctions.speed(not State.speedEnabled) end)
+
+		ToggleFunctions.infiniteJump = function(enabled)
+			State.infiniteJumpEnabled = enabled
+			Utils.animateToggle(jumpBg, jumpCircle, enabled)
+		end
+		jumpToggle.MouseButton1Click:Connect(function() ToggleFunctions.infiniteJump(not State.infiniteJumpEnabled) end)
+
+		ToggleFunctions.noClip = function(enabled)
+			State.noClipEnabled = enabled
+			Utils.animateToggle(noClipBg, noClipCircle, enabled)
+			if enabled then
+				Movement.enableNoClip()
+				Utils.disconnectConnection("noClip")
+				State.connections.noClip = Services.RunService.Heartbeat:Connect(function() if State.noClipEnabled then Movement.enableNoClip() end end)
+			else
+				Movement.disableNoClip()
+				Utils.disconnectConnection("noClip")
+			end
+		end
+		noClipToggle.MouseButton1Click:Connect(function() ToggleFunctions.noClip(not State.noClipEnabled) end)
+
+		ToggleFunctions.esp = function(enabled) State.espEnabled = enabled; Utils.animateToggle(espBg, espCircle, enabled); if not enabled then ESP.clearAllESP() end end
+		espToggle.MouseButton1Click:Connect(function() ToggleFunctions.esp(not State.espEnabled) end)
+
+		ToggleFunctions.tracers = function(enabled) State.tracersEnabled = enabled; Utils.animateToggle(tracersBg, tracersCircle, enabled); if not enabled then ESP.clearAllTracers() end end
+		tracersToggle.MouseButton1Click:Connect(function() ToggleFunctions.tracers(not State.tracersEnabled) end)
+
+		ToggleFunctions.healthBars = function(enabled) State.healthBarsEnabled = enabled; Utils.animateToggle(healthBarsBg, healthBarsCircle, enabled); if not enabled then ESP.clearAllHealthBars() end end
+		healthBarsToggle.MouseButton1Click:Connect(function() ToggleFunctions.healthBars(not State.healthBarsEnabled) end)
+
+		ToggleFunctions.playerESP = function(enabled) State.playerESPEnabled = enabled; Utils.animateToggle(playerESPBg, playerESPCircle, enabled) end
+		playerESPToggle.MouseButton1Click:Connect(function() ToggleFunctions.playerESP(not State.playerESPEnabled) end)
+
+		ToggleFunctions.fov = function(enabled) State.fovEnabled = enabled; Utils.animateToggle(fovBg, fovToggleCircle, enabled); if enabled then ESP.createFOVCircle() else ESP.removeFOVCircle() end end
+		fovToggle.MouseButton1Click:Connect(function() ToggleFunctions.fov(not State.fovEnabled) end)
+
 		ToggleFunctions.lockOn = function(enabled)
 			State.lockOnEnabled = enabled
 			Utils.animateToggle(lockOnBg, lockOnCircle, enabled)
@@ -1510,159 +1605,39 @@ local GUI = (function()
 				State.lockedTarget = nil
 			end
 		end
-		lockOnToggle.MouseButton1Click:Connect(function()
-			ToggleFunctions.lockOn(not State.lockOnEnabled)
-		end)
+		lockOnToggle.MouseButton1Click:Connect(function() ToggleFunctions.lockOn(not State.lockOnEnabled) end)
 
-		-- M1 Macro
-		ToggleFunctions.m1Macro = function(enabled)
-			State.m1MacroEnabled = enabled
-			Utils.animateToggle(m1Bg, m1Circle, enabled)
-			if enabled then
-				Utils.disconnectConnection("m1macro")
-				State.connections.m1macro = Services.RunService.Heartbeat:Connect(Combat.m1MacroLoop)
-			else
-				Utils.disconnectConnection("m1macro")
-			end
-		end
-		m1Toggle.MouseButton1Click:Connect(function()
-			ToggleFunctions.m1Macro(not State.m1MacroEnabled)
-		end)
-
-		-- Speed
-		ToggleFunctions.speed = function(enabled)
-			State.speedEnabled = enabled
-			Utils.animateToggle(speedBg, speedCircle, enabled)
-			if enabled then
-				Utils.disconnectConnection("speed")
-				State.connections.speed = Services.RunService.Heartbeat:Connect(Combat.speedLoop)
-			else
-				Utils.disconnectConnection("speed")
-			end
-		end
-		speedToggle.MouseButton1Click:Connect(function()
-			ToggleFunctions.speed(not State.speedEnabled)
-		end)
-
-		-- Infinite Jump
-		ToggleFunctions.infiniteJump = function(enabled)
-			State.infiniteJumpEnabled = enabled
-			Utils.animateToggle(jumpBg, jumpCircle, enabled)
-		end
-		jumpToggle.MouseButton1Click:Connect(function()
-			ToggleFunctions.infiniteJump(not State.infiniteJumpEnabled)
-		end)
-
-		-- No Clip
-		ToggleFunctions.noClip = function(enabled)
-			State.noClipEnabled = enabled
-			Utils.animateToggle(noClipBg, noClipCircle, enabled)
-			if enabled then
-				Movement.enableNoClip()
-				Utils.disconnectConnection("noClip")
-				State.connections.noClip = Services.RunService.Heartbeat:Connect(function()
-					if State.noClipEnabled then Movement.enableNoClip() end
-				end)
-			else
-				Movement.disableNoClip()
-				Utils.disconnectConnection("noClip")
-			end
-		end
-		noClipToggle.MouseButton1Click:Connect(function()
-			ToggleFunctions.noClip(not State.noClipEnabled)
-		end)
-
-		-- ESP
-		ToggleFunctions.esp = function(enabled)
-			State.espEnabled = enabled
-			Utils.animateToggle(espBg, espCircle, enabled)
-			if not enabled then ESP.clearAllESP() end
-		end
-		espToggle.MouseButton1Click:Connect(function()
-			ToggleFunctions.esp(not State.espEnabled)
-		end)
-
-		-- Tracers
-		ToggleFunctions.tracers = function(enabled)
-			State.tracersEnabled = enabled
-			Utils.animateToggle(tracersBg, tracersCircle, enabled)
-			if not enabled then ESP.clearAllTracers() end
-		end
-		tracersToggle.MouseButton1Click:Connect(function()
-			ToggleFunctions.tracers(not State.tracersEnabled)
-		end)
-
-		-- Health Bars
-		ToggleFunctions.healthBars = function(enabled)
-			State.healthBarsEnabled = enabled
-			Utils.animateToggle(healthBarsBg, healthBarsCircle, enabled)
-			if not enabled then ESP.clearAllHealthBars() end
-		end
-		healthBarsToggle.MouseButton1Click:Connect(function()
-			ToggleFunctions.healthBars(not State.healthBarsEnabled)
-		end)
-
-		-- Player ESP
-		ToggleFunctions.playerESP = function(enabled)
-			State.playerESPEnabled = enabled
-			Utils.animateToggle(playerESPBg, playerESPCircle, enabled)
-		end
-		playerESPToggle.MouseButton1Click:Connect(function()
-			ToggleFunctions.playerESP(not State.playerESPEnabled)
-		end)
-
-		-- FOV Circle
-		ToggleFunctions.fov = function(enabled)
-			State.fovEnabled = enabled
-			Utils.animateToggle(fovBg, fovToggleCircle, enabled)
-			if enabled then ESP.createFOVCircle() else ESP.removeFOVCircle() end
-		end
-		fovToggle.MouseButton1Click:Connect(function()
-			ToggleFunctions.fov(not State.fovEnabled)
-		end)
-
-		--// Sliders: lógica de drag //--
-		local m1Dragging            = false
-		local autofarmDistDragging  = false
-		local speedDragging         = false
-
+		-- Sliders
 		local function handleSlider(btn, fill, label, minV, maxV, precision, callback)
 			local dragging = false
 			btn.MouseButton1Down:Connect(function() dragging = true end)
-			Services.UserInputService.InputEnded:Connect(function(input)
-				if input.UserInputType == Enum.UserInputType.MouseButton1 then
-					dragging = false
-				end
-			end)
+			Services.UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end end)
 			Services.UserInputService.InputChanged:Connect(function(input)
 				if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-					local sliderBg  = btn.Parent
-					local mouseX    = Services.UserInputService:GetMouseLocation().X
-					local pct       = math.clamp(
-						(mouseX - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
-					local value     = minV + pct * (maxV - minV)
-					value           = math.floor(value * precision) / precision
-					label.Text      = tostring(value)
-					fill.Size       = Cache.UDim2_new(pct, 0, 1, 0)
+					local sliderBg = btn.Parent
+					local mouseX = Services.UserInputService:GetMouseLocation().X
+					local pct = math.clamp((mouseX - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
+					local value = minV + pct * (maxV - minV)
+					value = math.floor(value * precision) / precision
+					label.Text = tostring(value)
+					fill.Size = Cache.UDim2_new(pct, 0, 1, 0)
 					if callback then callback(value) end
 				end
 			end)
 		end
 
-		handleSlider(m1SliderBtn,           m1SliderFill,          m1ValueLabel,         m1Min,            m1Max,            100, function(v) State.m1ClickDelay   = v end)
-		handleSlider(speedSliderBtn,        speedSliderFill,       speedValueLabel,      speedMin,         speedMax,         1,   function(v) State.speedValue      = v end)
-		handleSlider(autofarmDistSliderBtn, autofarmDistFill,      autofarmDistLabel,    autofarmDistMin,  autofarmDistMax,  10,  function(v) State.autofarmDistance = v end)
+		handleSlider(autofarmDistSliderBtn, autofarmDistFill, autofarmDistLabel, autofarmDistMin, autofarmDistMax, 10, function(v) State.autofarmDistance = v end)
+		handleSlider(rangeSliderBtn, rangeFill, rangeLabel, rangeMin, rangeMax, 1, function(v) State.killAuraRange = v end)
+		handleSlider(delaySliderBtn, delayFill, delayLabel, delayMin, delayMax, 100, function(v) State.killAuraDelay = v end)
+		handleSlider(speedSliderBtn, speedSliderFill, speedValueLabel, speedMin, speedMax, 1, function(v) State.speedValue = v end)
 
-		--// Cleanup ao destruir //--
 		screenGui.Destroying:Connect(function()
 			Utils.cleanAllConnections()
 			ESP.clearAllESP()
 			ESP.clearAllTracers()
 			ESP.clearAllHealthBars()
 			ESP.removeFOVCircle()
-			for _, esp in pairs(State.playerESPObjects) do
-				if esp then esp:Destroy() end
-			end
+			for _, esp in pairs(State.playerESPObjects) do if esp then esp:Destroy() end end
 		end)
 
 		return { screenGui=screenGui, mainFrame=mainFrame, ToggleFunctions=ToggleFunctions }
@@ -1688,46 +1663,37 @@ local Input = (function()
 			end
 		end)
 
-		-- Hotkeys globais
+		-- Hotkeys
 		Services.UserInputService.InputBegan:Connect(function(input, processed)
 			if processed then return end
-
 			if input.KeyCode == Enum.KeyCode.F1 then
 				State.guiVisible = not State.guiVisible
 				mainFrame.Visible = State.guiVisible
-
 			elseif input.KeyCode == Enum.KeyCode.F2 then
-				ToggleFunctions.m1Macro(not State.m1MacroEnabled)
-
+				ToggleFunctions.killAura(not State.killAuraEnabled)
 			elseif input.KeyCode == Enum.KeyCode.F3 then
 				ToggleFunctions.autofarm(not State.autofarmEnabled)
-
 			elseif input.KeyCode == Enum.KeyCode.KeypadOne then
 				ToggleFunctions.speed(not State.speedEnabled)
-
 			elseif input.KeyCode == Enum.KeyCode.KeypadTwo then
 				ToggleFunctions.infiniteJump(not State.infiniteJumpEnabled)
-
 			elseif input.KeyCode == Enum.KeyCode.KeypadZero then
 				ToggleFunctions.esp(not State.espEnabled)
-
 			elseif input.KeyCode == Enum.KeyCode.KeypadThree then
 				ToggleFunctions.healthBars(not State.healthBarsEnabled)
 			end
 		end)
 
-		-- Re-connect loops após respawn
 		player.CharacterAdded:Connect(function()
 			Utils.invalidateCharCache()
 			task.wait(0.3)
-
 			if State.speedEnabled then
 				Utils.disconnectConnection("speed")
 				State.connections.speed = Services.RunService.Heartbeat:Connect(Combat.speedLoop)
 			end
-			if State.m1MacroEnabled then
-				Utils.disconnectConnection("m1macro")
-				State.connections.m1macro = Services.RunService.Heartbeat:Connect(Combat.m1MacroLoop)
+			if State.killAuraEnabled then
+				Utils.disconnectConnection("killAura")
+				State.connections.killAura = Services.RunService.Heartbeat:Connect(KillAura.loop)
 			end
 		end)
 	end
@@ -1738,57 +1704,51 @@ end)()
 --//====================================================--
 --//              REGISTRO DE FEATURES                  --
 --//====================================================--
-
 Registry.register("ESP",      ESP)
 Registry.register("Combat",   Combat)
 Registry.register("Movement", Movement)
 Registry.register("Teleport", Teleport)
 Registry.register("NPCCache", NPCCache)
+Registry.register("KillAura", KillAura)
 
 --//====================================================--
 --//                  INICIALIZAÇÃO                     --
 --//====================================================--
-
--- Verificação de player
 local player = Core.Services.Players.LocalPlayer
 if not player then return end
 
--- Constrói a GUI e obtém referências
+-- Inicia captura de argumentos do CombatEvent
+KillAura.captureArgs()
+
 local guiResult       = GUI.build()
 local ToggleFunctions = guiResult.ToggleFunctions
 local mainFrame       = guiResult.mainFrame
 
--- Inicia sistema de input com referências da GUI
 Input.init(mainFrame, ToggleFunctions)
 
--- Loop de renderização (visuais + player ESP + FOV)
 Core.State.connections.visualUpdate = Core.Services.RunService.RenderStepped:Connect(function()
 	ESP.updateVisuals()
 	ESP.updatePlayerESP()
 	ESP.updateFOVCircle()
 end)
 
---//====================================================--
---//                    STARTUP                         --
---//====================================================--
-
 print("═══════════════════════════════════════════════")
 print("        CYBER HUB - FFRE EDITION V4.3         ")
+print("     Kill Aura (Legit Replay) + Autofarm      ")
 print("═══════════════════════════════════════════════")
 print("  ⚔️  Combat: Auto Farm (Behind/Above)")
-print("  🎯  Lock On | M1 Macro")
+print("  🎯  Kill Aura (replay de ataques reais)")
 print("  🚀  Movement: Speed | Infinite Jump | No Clip")
 print("  👁️  Visual: ESP | Tracers | Health Bars")
 print("  📍  Teleport: Ultra Smooth (Anti-Kick)")
 print("═══════════════════════════════════════════════")
 print("  F1  - Toggle GUI")
-print("  F2  - Toggle M1 Macro")
+print("  F2  - Toggle Kill Aura")
 print("  F3  - Toggle Autofarm")
 print("  KP1 - Toggle Speed")
 print("  KP2 - Toggle Infinite Jump")
 print("═══════════════════════════════════════════════")
 
--- Expõe módulos para debug/extensão externa
 return {
 	Registry = Registry,
 	Core     = Core,
@@ -1796,6 +1756,7 @@ return {
 	Combat   = Combat,
 	Movement = Movement,
 	Teleport = Teleport,
+	KillAura = KillAura,
 }
 
-end)() -- Fim do IIFE principal (CyberHub)
+end)() -- Fim do IIFE
