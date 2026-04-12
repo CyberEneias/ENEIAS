@@ -1,10 +1,10 @@
 --//====================================================--
---//           CYBER HUB - FFRE EDITION V4.6           --
+--//           CYBER HUB - FFRE EDITION V4.7           --
 --//====================================================--
 --//  Ultra Smooth Teleport (Anti-Kick) + Lock On       --
 --//  ESP + Tracers + Health Bars (Workspace.Alive)     --
 --//  Dual Autofarm Mode: Behind / Above NPC            --
---//  Auto Attack (CombatEvent) + Config System         --
+--//  Auto Attack (MAX.txt original) + Config System    --
 --//  Resizable & Draggable Window                      --
 --//====================================================--
 
@@ -47,7 +47,7 @@ local Core = (function()
 		autofarmDistance   = 8,
 		infiniteJumpEnabled= false,
 		speedEnabled       = false,
-		autoAttackEnabled  = false,    -- substitui kill aura
+		autoAttackEnabled  = false,
 		espEnabled         = false,
 		tracersEnabled     = false,
 		healthBarsEnabled  = false,
@@ -60,9 +60,7 @@ local Core = (function()
 		lockedTarget       = nil,
 		lastNPCScan        = 0,
 		npcCache           = {},
-		lastAttack         = 0,
 		charCache          = { root=nil, humanoid=nil, character=nil, lastUpdate=0 },
-		weaponCache        = nil,
 		connections        = {},
 		espObjects         = {},
 		tracerLines        = {},
@@ -127,7 +125,6 @@ local Utils = (function()
 
 	local function invalidateCharCache()
 		State.charCache.lastUpdate = 0
-		State.weaponCache = nil
 	end
 
 	local function animateToggle(bg, circle, enabled)
@@ -452,48 +449,46 @@ local Combat = (function()
 	local Services = Core.Services
 	local player = Services.Players.LocalPlayer
 
-	-- Obtém o objeto da arma (Fist) conforme o MAX.txt
-	local function getWeapon()
-		if State.weaponCache then return State.weaponCache end
-		local char = Utils.getCharComponents()
-		if not char then return nil end
-		local fistCombat = char:FindFirstChild("FistCombat")
-		if not fistCombat then return nil end
-		local weaponFolder = fistCombat:FindFirstChild("WeaponInfoFolder")
-		if not weaponFolder then return nil end
-		local fist = weaponFolder:FindFirstChild("Fist")
-		if fist then State.weaponCache = fist end
-		return fist
+	-- ========== AUTO ATTACK (código idêntico ao MAX.txt) ==========
+	local autoAttackThread = nil
+	local autoAttackRunning = false
+	
+	-- Função que contém EXATAMENTE o código do MAX.txt
+	local function startAutoAttack()
+		if autoAttackThread then return end
+		autoAttackRunning = true
+		autoAttackThread = task.spawn(function()
+			-- Código original do MAX.txt (copiado fielmente)
+			local player = game.Players.LocalPlayer
+			local char = player.Character or player.CharacterAdded:Wait()
+			
+			local remote = game.ReplicatedStorage:WaitForChild("Events"):WaitForChild("CombatEvent")
+			local weapon = char:WaitForChild("FistCombat"):WaitForChild("WeaponInfoFolder"):WaitForChild("Fist")
+			
+			local root = char:WaitForChild("HumanoidRootPart")
+			
+			local function getCFrame()
+			    return root.CFrame * CFrame.new(0, 0, -3)
+			end
+			
+			while autoAttackRunning do
+				task.wait(0.18) -- 🔥 janela ideal
+				
+				-- 💥 burst dentro da janela
+				remote:FireServer(1, weapon, getCFrame(), true, weapon)
+				remote:FireServer(1, weapon, getCFrame(), true, weapon)
+			end
+		end)
 	end
-
-	-- Obtém o CFrame para o ataque (3 studs à frente do personagem) igual ao MAX.txt
-	local function getAttackCFrame()
-		local root = Utils.getCharComponents()
-		if not root then return CFrame.new() end
-		return root.CFrame * CFrame.new(0, 0, -3)
-	end
-
-	-- Dispara o remote CombatEvent duas vezes (burst) exatamente como no MAX.txt
-	local function fireCombatEvent()
-		local weapon = getWeapon()
-		if not weapon then return end
-		local remote = game.ReplicatedStorage:FindFirstChild("Events")
-		if remote then remote = remote:FindFirstChild("CombatEvent") end
-		if not remote then return end
-		local attackCF = getAttackCFrame()
-		remote:FireServer(1, weapon, attackCF, true, weapon)
-		remote:FireServer(1, weapon, attackCF, true, weapon)
-	end
-
-	-- Auto Attack Loop (delay fixo 0.18)
-	local function autoAttackLoop()
-		if not State.autoAttackEnabled then return end
-		local now = tick()
-		if now - State.lastAttack >= 0.18 then
-			pcall(fireCombatEvent)
-			State.lastAttack = now
+	
+	local function stopAutoAttack()
+		autoAttackRunning = false
+		if autoAttackThread then
+			task.cancel(autoAttackThread)
+			autoAttackThread = nil
 		end
 	end
+	-- ========== FIM DO AUTO ATTACK ==========
 
 	-- Lock On
 	local function lockOnLoop()
@@ -549,7 +544,13 @@ local Combat = (function()
 		end
 	end
 
-	return { autoAttackLoop=autoAttackLoop, lockOnLoop=lockOnLoop, autofarmLoop=autofarmLoop, speedLoop=speedLoop }
+	return {
+		startAutoAttack = startAutoAttack,
+		stopAutoAttack = stopAutoAttack,
+		lockOnLoop = lockOnLoop,
+		autofarmLoop = autofarmLoop,
+		speedLoop = speedLoop,
+	}
 end)()
 
 --//====================================================--
@@ -728,7 +729,6 @@ local GUI = (function()
 	local resizeStartPos, resizeStartSize
 	local selectedProfileBtn = nil
 
-	-- Função para tornar a janela redimensionável
 	local function makeResizable(frame)
 		local gripSize = 8
 		local grip = Instance.new("Frame")
@@ -759,7 +759,6 @@ local GUI = (function()
 		end)
 	end
 
-	-- Componentes GUI (reutilizáveis)
 	local function createSectionHeader(parent, text)
 		local frame = Instance.new("Frame")
 		frame.Size = Cache.UDim2_new(1,0,0,30)
@@ -965,7 +964,6 @@ local GUI = (function()
 		local borderStroke = Instance.new("UIStroke"); borderStroke.Color = Cache.Color3_fromRGB(100,100,120); borderStroke.Thickness = 1; borderStroke.Transparency = 0.5; borderStroke.Parent = mainFrame
 		makeResizable(mainFrame)
 
-		-- Header
 		local header = Instance.new("Frame")
 		header.Size = Cache.UDim2_new(1,0,0,35)
 		header.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
@@ -976,7 +974,7 @@ local GUI = (function()
 		titleLabel.Size = Cache.UDim2_new(1,-60,1,0)
 		titleLabel.Position = Cache.UDim2_new(0,10,0,0)
 		titleLabel.BackgroundTransparency = 1
-		titleLabel.Text = "✦ CYBER HUB v4.6"
+		titleLabel.Text = "✦ CYBER HUB v4.7"
 		titleLabel.Font = Enum.Font.GothamBold
 		titleLabel.TextSize = 13
 		titleLabel.TextColor3 = Cache.Color3_white
@@ -995,7 +993,6 @@ local GUI = (function()
 		local closeCorner = Instance.new("UICorner"); closeCorner.CornerRadius = UDim.new(0,4); closeCorner.Parent = closeBtn
 		closeBtn.MouseButton1Click:Connect(function() screenGui:Destroy() end)
 
-		-- Sidebar
 		local sidebar = Instance.new("Frame")
 		sidebar.Size = Cache.UDim2_new(0,45,1,-40)
 		sidebar.Position = Cache.UDim2_new(0,5,0,38)
@@ -1015,7 +1012,6 @@ local GUI = (function()
 		local configBtn = createSidebarBtn(sidebar, "⚙", "ConfigBtn")
 		local miscBtn = createSidebarBtn(sidebar, "🔧", "MiscBtn")
 
-		-- Content Area
 		local contentArea = Instance.new("Frame")
 		contentArea.Size = Cache.UDim2_new(1,-60,1,-40)
 		contentArea.Position = Cache.UDim2_new(0,55,0,38)
@@ -1047,10 +1043,10 @@ local GUI = (function()
 		miscBtn.MouseButton1Click:Connect(function() switchPage(miscPage, miscBtn) end)
 		switchPage(combatPage, combatBtn)
 
-		-- ==================== COMBAT PAGE ====================
+		-- COMBAT PAGE
 		createSectionHeader(combatPage, "Auto Farm")
 		local _, autofarmToggle, autofarmBg, autofarmCircle = createToggle(combatPage, "Auto Farm", "Farm nearest NPC", State.autofarmEnabled)
-		-- Farm mode
+		
 		local modeContainer = Instance.new("Frame")
 		modeContainer.Size = Cache.UDim2_new(1,0,0,60)
 		modeContainer.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
@@ -1103,14 +1099,14 @@ local GUI = (function()
 
 		local _, distSlider, distFill, distLabel, distMin, distMax = createSlider(combatPage, "Farm Distance", 1, 25, State.autofarmDistance)
 		local _, lockOnToggle, lockOnBg, lockOnCircle = createToggle(combatPage, "Lock On", "Camera follows target", State.lockOnEnabled)
-		local _, autoAttackToggle, autoAttackBg, autoAttackCircle = createToggle(combatPage, "Auto Attack (F2)", "Spam CombatEvent (delay 0.18s)", State.autoAttackEnabled)
+		local _, autoAttackToggle, autoAttackBg, autoAttackCircle = createToggle(combatPage, "Auto Attack (F2)", "Spam CombatEvent (MAX.txt original)", State.autoAttackEnabled)
 		
 		createSectionHeader(combatPage, "Movement")
 		local _, speedToggle, speedBg, speedCircle = createToggle(combatPage, "Speed Boost", "", State.speedEnabled)
 		local _, speedSlider, speedFill, speedValLabel, speedMin, speedMax = createSlider(combatPage, "Speed Value", 50, 300, State.speedValue)
 		local _, jumpToggle, jumpBg, jumpCircle = createToggle(combatPage, "Infinite Jump", "", State.infiniteJumpEnabled)
 
-		-- ==================== VISUAL PAGE ====================
+		-- VISUAL PAGE
 		createSectionHeader(visualPage, "NPC Visuals")
 		local _, espToggle, espBg, espCircle = createToggle(visualPage, "ESP Highlights", "", State.espEnabled)
 		local _, tracersToggle, tracersBg, tracersCircle = createToggle(visualPage, "Tracers", "", State.tracersEnabled)
@@ -1119,7 +1115,7 @@ local GUI = (function()
 		local _, playerESPToggle, playerESPBg, playerESPCircle = createToggle(visualPage, "Player ESP", "", State.playerESPEnabled)
 		local _, fovToggle, fovBg, fovCircle = createToggle(visualPage, "FOV Circle", "", State.fovEnabled)
 
-		-- ==================== TELEPORT PAGE ====================
+		-- TELEPORT PAGE
 		createSectionHeader(teleportPage, "Safe Teleport")
 		local tpInfo = Instance.new("Frame")
 		tpInfo.Size = Cache.UDim2_new(1,0,0,55)
@@ -1177,7 +1173,7 @@ local GUI = (function()
 		refreshBtn.MouseButton1Click:Connect(populateNPCList)
 		task.spawn(populateNPCList)
 
-		-- ==================== CONFIG PAGE ====================
+		-- CONFIG PAGE
 		createSectionHeader(configPage, "Profile Manager")
 		local configInfo = Instance.new("Frame")
 		configInfo.Size = Cache.UDim2_new(1,0,0,45)
@@ -1198,7 +1194,6 @@ local GUI = (function()
 		configLabel.TextXAlignment = Enum.TextXAlignment.Left
 		configLabel.Parent = configInfo
 
-		-- Nome do perfil
 		local nameContainer = Instance.new("Frame")
 		nameContainer.Size = Cache.UDim2_new(1,0,0,45)
 		nameContainer.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
@@ -1227,7 +1222,6 @@ local GUI = (function()
 		nameBox.Parent = nameContainer
 		local nameBoxCorner = Instance.new("UICorner"); nameBoxCorner.CornerRadius = UDim.new(0,4); nameBoxCorner.Parent = nameBox
 
-		-- Botões de ação
 		local btnContainer = Instance.new("Frame")
 		btnContainer.Size = Cache.UDim2_new(1,0,0,45)
 		btnContainer.BackgroundTransparency = 1
@@ -1248,7 +1242,6 @@ local GUI = (function()
 		deleteBtn.Size = Cache.UDim2_new(0,65,0,30)
 		autoloadBtn.Size = Cache.UDim2_new(0,75,0,30)
 
-		-- Lista de perfis com destaque visual
 		local profileList = Instance.new("ScrollingFrame")
 		profileList.Size = Cache.UDim2_new(1,0,0,140)
 		profileList.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
@@ -1267,7 +1260,6 @@ local GUI = (function()
 			for _,name in ipairs(names) do
 				local btn = Instance.new("TextButton")
 				btn.Size = Cache.UDim2_new(1,-10,0,28)
-				-- Destaque visual: se o nome for o selecionado, fundo azul; senão, fundo escuro
 				btn.BackgroundColor3 = (selectedName == name) and Cache.Color3_fromRGB(100,180,255) or Cache.Color3_fromRGB(25,25,35)
 				btn.Text = "   📄 "..name
 				btn.Font = Enum.Font.Gotham
@@ -1279,7 +1271,7 @@ local GUI = (function()
 				local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,4); corner.Parent = btn
 				btn.MouseButton1Click:Connect(function()
 					nameBox.Text = name
-					refreshProfileList(name)  -- atualiza a lista com o novo selecionado
+					refreshProfileList(name)
 				end)
 			end
 			profileList.CanvasSize = Cache.UDim2_new(0,0,0, #names * 32 + 10)
@@ -1313,11 +1305,11 @@ local GUI = (function()
 		end)
 		refreshProfileList()
 
-		-- ==================== MISC PAGE ====================
+		-- MISC PAGE
 		createSectionHeader(miscPage, "Misc")
 		local _, noClipToggle, noClipBg, noClipCircle = createToggle(miscPage, "No Clip", "Walk through walls", State.noClipEnabled)
 
-		-- ==================== TOGGLE FUNCTIONS ====================
+		-- TOGGLE FUNCTIONS
 		ToggleFunctions.autofarm = function(enabled)
 			State.autofarmEnabled = enabled
 			Utils.animateToggle(autofarmBg, autofarmCircle, enabled)
@@ -1348,10 +1340,9 @@ local GUI = (function()
 			State.autoAttackEnabled = enabled
 			Utils.animateToggle(autoAttackBg, autoAttackCircle, enabled)
 			if enabled then
-				Utils.disconnectConnection("autoAttack")
-				State.connections.autoAttack = Services.RunService.Heartbeat:Connect(Combat.autoAttackLoop)
+				Combat.startAutoAttack()
 			else
-				Utils.disconnectConnection("autoAttack")
+				Combat.stopAutoAttack()
 			end
 		end
 		autoAttackToggle.MouseButton1Click:Connect(function() ToggleFunctions.autoAttack(not State.autoAttackEnabled) end)
@@ -1422,7 +1413,6 @@ local GUI = (function()
 		end
 		fovToggle.MouseButton1Click:Connect(function() ToggleFunctions.fov(not State.fovEnabled) end)
 
-		-- Sliders
 		local function handleSlider(btn, fill, label, minV, maxV, precision, callback)
 			local dragging = false
 			btn.MouseButton1Down:Connect(function() dragging = true end)
@@ -1457,6 +1447,7 @@ local GUI = (function()
 			Utils.cleanAllConnections()
 			ESP.clearAllESP(); ESP.clearAllTracers(); ESP.clearAllHealthBars(); ESP.removeFOVCircle()
 			for _,esp in pairs(State.playerESPObjects) do if esp then esp:Destroy() end end
+			Combat.stopAutoAttack()
 		end)
 
 		return { screenGui=screenGui, mainFrame=mainFrame, ToggleFunctions=ToggleFunctions, refreshToggles=function()
@@ -1511,8 +1502,8 @@ local Input = (function()
 				State.connections.speed = Services.RunService.Heartbeat:Connect(Combat.speedLoop)
 			end
 			if State.autoAttackEnabled then
-				Utils.disconnectConnection("autoAttack")
-				State.connections.autoAttack = Services.RunService.Heartbeat:Connect(Combat.autoAttackLoop)
+				Combat.stopAutoAttack()
+				Combat.startAutoAttack()
 			end
 		end)
 	end
@@ -1543,7 +1534,7 @@ task.wait(0.5)
 if GUI.refreshToggles then GUI.refreshToggles() end
 
 print("═══════════════════════════════════════════════")
-print("        CYBER HUB - FFRE EDITION V4.6         ")
+print("        CYBER HUB - FFRE EDITION V4.7         ")
 print("═══════════════════════════════════════════════")
 print("  ⚔️  Combat: Auto Farm | Lock On | Auto Attack")
 print("  🚀  Movement: Speed | Infinite Jump | No Clip")
@@ -1553,7 +1544,7 @@ print("  ⚙️  Config: Save/Load/Overwrite profiles")
 print("  🖱️  Window: Draggable & Resizable")
 print("═══════════════════════════════════════════════")
 print("  F1  - Toggle GUI")
-print("  F2  - Toggle Auto Attack")
+print("  F2  - Toggle Auto Attack (MAX.txt original)")
 print("  F3  - Toggle Autofarm")
 print("  KP1 - Toggle Speed")
 print("  KP2 - Toggle Infinite Jump")
