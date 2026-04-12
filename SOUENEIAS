@@ -1,10 +1,10 @@
 --//====================================================--
---//           CYBER HUB - FFRE EDITION V4.5           --
+--//           CYBER HUB - FFRE EDITION V4.6           --
 --//====================================================--
 --//  Ultra Smooth Teleport (Anti-Kick) + Lock On       --
 --//  ESP + Tracers + Health Bars (Workspace.Alive)     --
 --//  Dual Autofarm Mode: Behind / Above NPC            --
---//  Kill Aura (CombatEvent) + Config System           --
+--//  Auto Attack (CombatEvent) + Config System         --
 --//  Resizable & Draggable Window                      --
 --//====================================================--
 
@@ -47,9 +47,7 @@ local Core = (function()
 		autofarmDistance   = 8,
 		infiniteJumpEnabled= false,
 		speedEnabled       = false,
-		killAuraEnabled    = false,
-		attackDelay        = 0.18,
-		attackRange        = 12,
+		autoAttackEnabled  = false,    -- substitui kill aura
 		espEnabled         = false,
 		tracersEnabled     = false,
 		healthBarsEnabled  = false,
@@ -454,6 +452,7 @@ local Combat = (function()
 	local Services = Core.Services
 	local player = Services.Players.LocalPlayer
 
+	-- Obtém o objeto da arma (Fist) conforme o MAX.txt
 	local function getWeapon()
 		if State.weaponCache then return State.weaponCache end
 		local char = Utils.getCharComponents()
@@ -467,12 +466,14 @@ local Combat = (function()
 		return fist
 	end
 
+	-- Obtém o CFrame para o ataque (3 studs à frente do personagem) igual ao MAX.txt
 	local function getAttackCFrame()
 		local root = Utils.getCharComponents()
 		if not root then return CFrame.new() end
-		return root.CFrame * CFrame.new(0,0,-3)
+		return root.CFrame * CFrame.new(0, 0, -3)
 	end
 
+	-- Dispara o remote CombatEvent duas vezes (burst) exatamente como no MAX.txt
 	local function fireCombatEvent()
 		local weapon = getWeapon()
 		if not weapon then return end
@@ -484,17 +485,17 @@ local Combat = (function()
 		remote:FireServer(1, weapon, attackCF, true, weapon)
 	end
 
-	local function killAuraLoop()
-		if not State.killAuraEnabled then return end
+	-- Auto Attack Loop (delay fixo 0.18)
+	local function autoAttackLoop()
+		if not State.autoAttackEnabled then return end
 		local now = tick()
-		if now - State.lastAttack < State.attackDelay then return end
-		local closest = NPCCache.findClosest()
-		if closest and NPCCache.getDistance(closest) <= State.attackRange then
+		if now - State.lastAttack >= 0.18 then
 			pcall(fireCombatEvent)
 			State.lastAttack = now
 		end
 	end
 
+	-- Lock On
 	local function lockOnLoop()
 		if not State.lockOnEnabled then return end
 		local camera = workspace.CurrentCamera
@@ -512,6 +513,7 @@ local Combat = (function()
 		end
 	end
 
+	-- Auto Farm
 	local function autofarmLoop()
 		if not State.autofarmEnabled then return end
 		local root = Utils.getCharComponents()
@@ -534,6 +536,7 @@ local Combat = (function()
 		end
 	end
 
+	-- Speed Boost
 	local function speedLoop()
 		if not State.speedEnabled then return end
 		local root, hum = Utils.getCharComponents()
@@ -546,7 +549,7 @@ local Combat = (function()
 		end
 	end
 
-	return { killAuraLoop=killAuraLoop, lockOnLoop=lockOnLoop, autofarmLoop=autofarmLoop, speedLoop=speedLoop }
+	return { autoAttackLoop=autoAttackLoop, lockOnLoop=lockOnLoop, autofarmLoop=autofarmLoop, speedLoop=speedLoop }
 end)()
 
 --//====================================================--
@@ -661,7 +664,7 @@ local ConfigManager = (function()
 	local function saveConfig(name)
 		local data = {
 			autofarmEnabled=State.autofarmEnabled, autofarmMode=State.autofarmMode, autofarmDistance=State.autofarmDistance,
-			lockOnEnabled=State.lockOnEnabled, killAuraEnabled=State.killAuraEnabled, attackDelay=State.attackDelay, attackRange=State.attackRange,
+			lockOnEnabled=State.lockOnEnabled, autoAttackEnabled=State.autoAttackEnabled,
 			speedEnabled=State.speedEnabled, speedValue=State.speedValue, infiniteJumpEnabled=State.infiniteJumpEnabled, noClipEnabled=State.noClipEnabled,
 			espEnabled=State.espEnabled, tracersEnabled=State.tracersEnabled, healthBarsEnabled=State.healthBarsEnabled,
 			playerESPEnabled=State.playerESPEnabled, fovEnabled=State.fovEnabled,
@@ -697,12 +700,16 @@ local ConfigManager = (function()
 		return false
 	end
 
+	local function overwriteConfig(name)
+		return saveConfig(name)
+	end
+
 	local autoloadFile = folder.."/autoload.txt"
 	local function setAutoload(name) writefile(autoloadFile, name) end
 	local function getAutoload() return isfile(autoloadFile) and readfile(autoloadFile) or nil end
 	local function loadAutoload() local name = getAutoload(); if name then loadConfig(name) end end
 
-	return { saveConfig=saveConfig, loadConfig=loadConfig, listConfigs=listConfigs, deleteConfig=deleteConfig, setAutoload=setAutoload, getAutoload=getAutoload, loadAutoload=loadAutoload }
+	return { saveConfig=saveConfig, loadConfig=loadConfig, listConfigs=listConfigs, deleteConfig=deleteConfig, overwriteConfig=overwriteConfig, setAutoload=setAutoload, getAutoload=getAutoload, loadAutoload=loadAutoload }
 end)()
 
 --//====================================================--
@@ -719,6 +726,7 @@ local GUI = (function()
 	local toggleRefs = {}
 	local resizeActive = false
 	local resizeStartPos, resizeStartSize
+	local selectedProfileBtn = nil
 
 	-- Função para tornar a janela redimensionável
 	local function makeResizable(frame)
@@ -968,7 +976,7 @@ local GUI = (function()
 		titleLabel.Size = Cache.UDim2_new(1,-60,1,0)
 		titleLabel.Position = Cache.UDim2_new(0,10,0,0)
 		titleLabel.BackgroundTransparency = 1
-		titleLabel.Text = "✦ CYBER HUB v4.5"
+		titleLabel.Text = "✦ CYBER HUB v4.6"
 		titleLabel.Font = Enum.Font.GothamBold
 		titleLabel.TextSize = 13
 		titleLabel.TextColor3 = Cache.Color3_white
@@ -1095,9 +1103,8 @@ local GUI = (function()
 
 		local _, distSlider, distFill, distLabel, distMin, distMax = createSlider(combatPage, "Farm Distance", 1, 25, State.autofarmDistance)
 		local _, lockOnToggle, lockOnBg, lockOnCircle = createToggle(combatPage, "Lock On", "Camera follows target", State.lockOnEnabled)
-		local _, killAuraToggle, killAuraBg, killAuraCircle = createToggle(combatPage, "Kill Aura (F2)", "Auto attack nearby NPCs", State.killAuraEnabled)
-		local _, delaySlider, delayFill, delayLabel, delayMin, delayMax = createSlider(combatPage, "Attack Delay (s)", 0.05, 0.5, State.attackDelay)
-		local _, rangeSlider, rangeFill, rangeLabel, rangeMin, rangeMax = createSlider(combatPage, "Attack Range", 5, 25, State.attackRange)
+		local _, autoAttackToggle, autoAttackBg, autoAttackCircle = createToggle(combatPage, "Auto Attack (F2)", "Spam CombatEvent (delay 0.18s)", State.autoAttackEnabled)
+		
 		createSectionHeader(combatPage, "Movement")
 		local _, speedToggle, speedBg, speedCircle = createToggle(combatPage, "Speed Boost", "", State.speedEnabled)
 		local _, speedSlider, speedFill, speedValLabel, speedMin, speedMax = createSlider(combatPage, "Speed Value", 50, 300, State.speedValue)
@@ -1232,14 +1239,16 @@ local GUI = (function()
 		btnLayout.Parent = btnContainer
 		local saveBtn = createButton(btnContainer, "Save", Cache.Color3_fromRGB(80,200,120))
 		local loadBtn = createButton(btnContainer, "Load", Cache.Color3_fromRGB(100,180,255))
+		local overwriteBtn = createButton(btnContainer, "Overwrite", Cache.Color3_fromRGB(255,180,80))
 		local deleteBtn = createButton(btnContainer, "Delete", Cache.Color3_fromRGB(220,80,80))
 		local autoloadBtn = createButton(btnContainer, "Autoload", Cache.Color3_fromRGB(255,180,80))
-		saveBtn.Size = Cache.UDim2_new(0,70,0,30)
-		loadBtn.Size = Cache.UDim2_new(0,70,0,30)
-		deleteBtn.Size = Cache.UDim2_new(0,70,0,30)
-		autoloadBtn.Size = Cache.UDim2_new(0,80,0,30)
+		saveBtn.Size = Cache.UDim2_new(0,65,0,30)
+		loadBtn.Size = Cache.UDim2_new(0,65,0,30)
+		overwriteBtn.Size = Cache.UDim2_new(0,85,0,30)
+		deleteBtn.Size = Cache.UDim2_new(0,65,0,30)
+		autoloadBtn.Size = Cache.UDim2_new(0,75,0,30)
 
-		-- Lista de perfis
+		-- Lista de perfis com destaque visual
 		local profileList = Instance.new("ScrollingFrame")
 		profileList.Size = Cache.UDim2_new(1,0,0,140)
 		profileList.BackgroundColor3 = Cache.Color3_fromRGB(18,18,25)
@@ -1252,22 +1261,26 @@ local GUI = (function()
 		profileListLayout.Padding = UDim.new(0,4)
 		profileListLayout.Parent = profileList
 
-		local function refreshProfileList()
+		local function refreshProfileList(selectedName)
 			for _,c in ipairs(profileList:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
 			local names = ConfigManager.listConfigs()
 			for _,name in ipairs(names) do
 				local btn = Instance.new("TextButton")
 				btn.Size = Cache.UDim2_new(1,-10,0,28)
-				btn.BackgroundColor3 = Cache.Color3_fromRGB(25,25,35)
+				-- Destaque visual: se o nome for o selecionado, fundo azul; senão, fundo escuro
+				btn.BackgroundColor3 = (selectedName == name) and Cache.Color3_fromRGB(100,180,255) or Cache.Color3_fromRGB(25,25,35)
 				btn.Text = "   📄 "..name
 				btn.Font = Enum.Font.Gotham
 				btn.TextSize = 11
-				btn.TextColor3 = Cache.Color3_white
+				btn.TextColor3 = (selectedName == name) and Cache.Color3_white or Cache.Color3_fromRGB(200,200,210)
 				btn.TextXAlignment = Enum.TextXAlignment.Left
 				btn.BorderSizePixel = 0
 				btn.Parent = profileList
 				local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,4); corner.Parent = btn
-				btn.MouseButton1Click:Connect(function() nameBox.Text = name end)
+				btn.MouseButton1Click:Connect(function()
+					nameBox.Text = name
+					refreshProfileList(name)  -- atualiza a lista com o novo selecionado
+				end)
 			end
 			profileList.CanvasSize = Cache.UDim2_new(0,0,0, #names * 32 + 10)
 		end
@@ -1275,14 +1288,19 @@ local GUI = (function()
 		saveBtn.MouseButton1Click:Connect(function()
 			local n = nameBox.Text:gsub("[^%w_]", ""); if n=="" then n="unnamed" end
 			ConfigManager.saveConfig(n)
-			refreshProfileList()
+			refreshProfileList(n)
 		end)
 		loadBtn.MouseButton1Click:Connect(function()
 			local n = nameBox.Text:gsub("[^%w_]", ""); if n=="" then return end
 			ConfigManager.loadConfig(n)
-			refreshProfileList()
+			refreshProfileList(n)
 			updateModeVisuals()
 			for k,v in pairs(toggleRefs) do Utils.animateToggle(v.bg, v.circle, State[k]) end
+		end)
+		overwriteBtn.MouseButton1Click:Connect(function()
+			local n = nameBox.Text:gsub("[^%w_]", ""); if n=="" then n="unnamed" end
+			ConfigManager.overwriteConfig(n)
+			refreshProfileList(n)
 		end)
 		deleteBtn.MouseButton1Click:Connect(function()
 			local n = nameBox.Text:gsub("[^%w_]", ""); if n=="" then return end
@@ -1326,17 +1344,17 @@ local GUI = (function()
 		end
 		lockOnToggle.MouseButton1Click:Connect(function() ToggleFunctions.lockOn(not State.lockOnEnabled) end)
 
-		ToggleFunctions.killAura = function(enabled)
-			State.killAuraEnabled = enabled
-			Utils.animateToggle(killAuraBg, killAuraCircle, enabled)
+		ToggleFunctions.autoAttack = function(enabled)
+			State.autoAttackEnabled = enabled
+			Utils.animateToggle(autoAttackBg, autoAttackCircle, enabled)
 			if enabled then
-				Utils.disconnectConnection("killAura")
-				State.connections.killAura = Services.RunService.Heartbeat:Connect(Combat.killAuraLoop)
+				Utils.disconnectConnection("autoAttack")
+				State.connections.autoAttack = Services.RunService.Heartbeat:Connect(Combat.autoAttackLoop)
 			else
-				Utils.disconnectConnection("killAura")
+				Utils.disconnectConnection("autoAttack")
 			end
 		end
-		killAuraToggle.MouseButton1Click:Connect(function() ToggleFunctions.killAura(not State.killAuraEnabled) end)
+		autoAttackToggle.MouseButton1Click:Connect(function() ToggleFunctions.autoAttack(not State.autoAttackEnabled) end)
 
 		ToggleFunctions.speed = function(enabled)
 			State.speedEnabled = enabled
@@ -1424,13 +1442,11 @@ local GUI = (function()
 		end
 
 		handleSlider(distSlider, distFill, distLabel, distMin, distMax, 10, function(v) State.autofarmDistance = v end)
-		handleSlider(delaySlider, delayFill, delayLabel, delayMin, delayMax, 100, function(v) State.attackDelay = v end)
-		handleSlider(rangeSlider, rangeFill, rangeLabel, rangeMin, rangeMax, 1, function(v) State.attackRange = v end)
 		handleSlider(speedSlider, speedFill, speedValLabel, speedMin, speedMax, 1, function(v) State.speedValue = v end)
 
 		toggleRefs = {
 			autofarmEnabled={bg=autofarmBg, circle=autofarmCircle}, lockOnEnabled={bg=lockOnBg, circle=lockOnCircle},
-			killAuraEnabled={bg=killAuraBg, circle=killAuraCircle}, speedEnabled={bg=speedBg, circle=speedCircle},
+			autoAttackEnabled={bg=autoAttackBg, circle=autoAttackCircle}, speedEnabled={bg=speedBg, circle=speedCircle},
 			infiniteJumpEnabled={bg=jumpBg, circle=jumpCircle}, noClipEnabled={bg=noClipBg, circle=noClipCircle},
 			espEnabled={bg=espBg, circle=espCircle}, tracersEnabled={bg=tracersBg, circle=tracersCircle},
 			healthBarsEnabled={bg=healthBarsBg, circle=healthBarsCircle}, playerESPEnabled={bg=playerESPBg, circle=playerESPCircle},
@@ -1473,7 +1489,7 @@ local Input = (function()
 				State.guiVisible = not State.guiVisible
 				mainFrame.Visible = State.guiVisible
 			elseif input.KeyCode == Enum.KeyCode.F2 then
-				ToggleFunctions.killAura(not State.killAuraEnabled)
+				ToggleFunctions.autoAttack(not State.autoAttackEnabled)
 			elseif input.KeyCode == Enum.KeyCode.F3 then
 				ToggleFunctions.autofarm(not State.autofarmEnabled)
 			elseif input.KeyCode == Enum.KeyCode.KeypadOne then
@@ -1494,9 +1510,9 @@ local Input = (function()
 				Utils.disconnectConnection("speed")
 				State.connections.speed = Services.RunService.Heartbeat:Connect(Combat.speedLoop)
 			end
-			if State.killAuraEnabled then
-				Utils.disconnectConnection("killAura")
-				State.connections.killAura = Services.RunService.Heartbeat:Connect(Combat.killAuraLoop)
+			if State.autoAttackEnabled then
+				Utils.disconnectConnection("autoAttack")
+				State.connections.autoAttack = Services.RunService.Heartbeat:Connect(Combat.autoAttackLoop)
 			end
 		end)
 	end
@@ -1527,17 +1543,17 @@ task.wait(0.5)
 if GUI.refreshToggles then GUI.refreshToggles() end
 
 print("═══════════════════════════════════════════════")
-print("        CYBER HUB - FFRE EDITION V4.5         ")
+print("        CYBER HUB - FFRE EDITION V4.6         ")
 print("═══════════════════════════════════════════════")
-print("  ⚔️  Combat: Auto Farm | Lock On | Kill Aura")
+print("  ⚔️  Combat: Auto Farm | Lock On | Auto Attack")
 print("  🚀  Movement: Speed | Infinite Jump | No Clip")
 print("  👁️  Visual: ESP | Tracers | Health Bars")
 print("  📍  Teleport: Ultra Smooth (Anti-Kick)")
-print("  ⚙️  Config: Save/Load profiles")
+print("  ⚙️  Config: Save/Load/Overwrite profiles")
 print("  🖱️  Window: Draggable & Resizable")
 print("═══════════════════════════════════════════════")
 print("  F1  - Toggle GUI")
-print("  F2  - Toggle Kill Aura")
+print("  F2  - Toggle Auto Attack")
 print("  F3  - Toggle Autofarm")
 print("  KP1 - Toggle Speed")
 print("  KP2 - Toggle Infinite Jump")
